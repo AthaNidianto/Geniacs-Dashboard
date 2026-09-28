@@ -426,6 +426,13 @@ function updateDeviceCount(shown, total) {
     }
 }
 
+let currentStatusFilter = 'all'; // Variabel penyimpan status aktif
+
+function filterByStatus(status) {
+    currentStatusFilter = status;
+    applyRbFilter(); // Panggil fungsi master filter
+}
+
 function updateDeviceStats(devices, showStats = true) {
     const statsContainer = document.getElementById('device-stats-badges');
 
@@ -438,10 +445,15 @@ function updateDeviceStats(devices, showStats = true) {
     const online = devices.filter(d => d.status === 'online').length;
     const offline = total - online;
 
+    // Bikin efek redup untuk tombol yang tidak dipilih
+    const opTotal = currentStatusFilter === 'all' ? '1' : '0.4';
+    const opOnline = currentStatusFilter === 'online' ? '1' : '0.4';
+    const opOffline = currentStatusFilter === 'offline' ? '1' : '0.4';
+
     statsContainer.innerHTML = `
-        <span class="badge bg-secondary">Total [${total}]</span>
-        <span class="badge bg-success">Online [${online}]</span>
-        <span class="badge bg-danger">Offline [${offline}]</span>
+        <span class="badge bg-secondary shadow-sm" style="cursor: pointer; opacity: ${opTotal}; transition: 0.2s;" onclick="filterByStatus('all')">TOTAL [${total}]</span>
+        <span class="badge bg-success shadow-sm" style="cursor: pointer; opacity: ${opOnline}; transition: 0.2s;" onclick="filterByStatus('online')">ONLINE [${online}]</span>
+        <span class="badge bg-danger shadow-sm" style="cursor: pointer; opacity: ${opOffline}; transition: 0.2s;" onclick="filterByStatus('offline')">OFFLINE [${offline}]</span>
     `;
 }
 
@@ -568,150 +580,7 @@ function updateSearchPlaceholder(type) {
 
 // Search functionality
 function filterDevices() {
-    const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
-
-    // Reset to page 1 when search term changes
-    currentPage = 1;
-
-    // Get devices based on current tab
-    let baseDevices = allDevices;
-    if (currentFilterType === 'onu') {
-        // For ONU: show ALL devices from GenieACS (no filtering)
-        baseDevices = allDevices;
-    } else {
-        // For ODP, ODC, OLT, Server: use map data
-        const mapItemDeviceIds = new Set();
-
-        allMapItems.forEach(item => {
-            if (item.item_type === currentFilterType) {
-                // For Server, match by mikrotik_device_id in properties
-                if (currentFilterType === 'server' && item.properties && item.properties.mikrotik_device_id) {
-                    mapItemDeviceIds.add(item.properties.mikrotik_device_id);
-                }
-            }
-        });
-
-        // Filter devices that match map items
-        baseDevices = allDevices.filter(device => {
-            return mapItemDeviceIds.has(device.device_id);
-        });
-    }
-
-    if (searchTerm === '') {
-        if (currentFilterType === 'onu') {
-            renderDevices(baseDevices);
-            updateDeviceCount(baseDevices.length, allDevices.length);
-            updateDeviceStats(baseDevices, true);
-        } else {
-            renderMapItems(currentFilterType);
-            updateDeviceStats([], false);
-        }
-        return;
-    }
-
-    // Different search logic based on tab type
-    if (currentFilterType === 'onu') {
-        // ONU: search by Serial Number, MAC Address, or Tags
-        const filteredDevices = baseDevices.filter(device => {
-            const serialNumber = (device.serial_number || '').toLowerCase();
-            const macAddress = (device.mac_address || '').toLowerCase();
-
-            // Search in tags array
-            let tagsMatch = false;
-            if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
-                tagsMatch = device.tags.some(tag => tag.toLowerCase().includes(searchTerm));
-            }
-
-            return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || tagsMatch;
-        });
-
-        // Debug: Log search results
-        console.log(`[SEARCH] Found ${filteredDevices.length} device(s) matching "${searchTerm}"`);
-
-        renderDevices(filteredDevices);
-        updateDeviceCount(filteredDevices.length, allDevices.length);
-        updateDeviceStats(filteredDevices, true);
-    } else {
-        // Infrastructure: search by Name
-        let items = [];
-
-        if (currentFilterType === 'olt') {
-            // OLT stored in Server properties
-            allMapItems.forEach(item => {
-                if (item.item_type === 'server' && item.properties && item.properties.olt_link) {
-                    const oltName = (item.properties.olt_link || '').toLowerCase();
-                    const serverName = (item.name || '').toLowerCase();
-
-                    if (oltName.includes(searchTerm) || serverName.includes(searchTerm)) {
-                        items.push({
-                            id: item.id,
-                            name: item.properties.olt_link || 'OLT',
-                            item_type: 'olt',
-                            latitude: item.latitude,
-                            longitude: item.longitude,
-                            status: item.status,
-                            server_name: item.name
-                        });
-                    }
-                }
-            });
-        } else {
-            // Filter map items by type and name
-            items = allMapItems.filter(item => {
-                if (item.item_type !== currentFilterType) return false;
-                const itemName = (item.name || '').toLowerCase();
-                return itemName.includes(searchTerm);
-            });
-        }
-
-        // Render filtered items manually
-        const tbody = document.getElementById('devices-tbody');
-        tbody.innerHTML = '';
-
-        if (items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No items found</td></tr>';
-            updateDeviceCount(0, 0);
-            return;
-        }
-
-        items.forEach(item => {
-            const row = document.createElement('tr');
-
-            // Get status badge
-            const status = item.status || 'unknown';
-            let statusBadge = '';
-            if (status === 'online') {
-                statusBadge = '<span class="badge online">Online</span>';
-            } else if (status === 'offline') {
-                statusBadge = '<span class="badge offline">Offline</span>';
-            } else {
-                statusBadge = '<span class="badge bg-secondary">Unknown</span>';
-            }
-
-            // Format coordinates
-            const lat = parseFloat(item.latitude).toFixed(6);
-            const lng = parseFloat(item.longitude).toFixed(6);
-
-            // For OLT, show server name in parentheses
-            const displayName = currentFilterType === 'olt' ? `${item.name} (${item.server_name})` : item.name;
-
-            row.innerHTML = `
-                <td>${displayName}</td>
-                <td><span class="badge bg-primary">${currentFilterType.toUpperCase()}</span></td>
-                <td>${lat}</td>
-                <td>${lng}</td>
-                <td>${statusBadge}</td>
-                <td>
-                    <button class="btn btn-sm btn-success" onclick="window.open('/map.php?focus_type=server&focus_id=${item.id}', '_blank')" title="View on Map">
-                        <i class="bi bi-map"></i>
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-
-        updateDeviceCount(items.length, items.length);
-    }
+    applyRbFilter(); // Re-apply master filter to include status and type filters
 }
 
 function clearSearch() {
@@ -1263,34 +1132,40 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
-// Filter Devices by RB Dropdown
 function applyRbFilter() {
-    const rbFilter = document.getElementById('rbFilter').value.toLowerCase();
+    const rbElement = document.getElementById('rbFilter');
+    const rbFilter = rbElement ? rbElement.value.toLowerCase() : 'all';
     
-    // Reset to page 1 when filter changes
-    currentPage = 1;
+    currentPage = 1; // Reset halaman ke 1
     
-    let devicesToRender = allDevices;
-    
-    // Jika bukan "all", saring berdasarkan parameter RB
+    // 1. FILTER BERDASARKAN RB DULU
+    let rbFilteredDevices = allDevices;
     if (rbFilter !== 'all') {
-        devicesToRender = allDevices.filter(device => {
+        rbFilteredDevices = allDevices.filter(device => {
             const ipString = extractIP(device.ip_tr069);
-            
-            // Logika pencocokan IP Segmen dengan RB
-            if (rbFilter === '56c') {
-                return ipString.startsWith('10.123.'); 
-            } else if (rbFilter === 'klaling') {
-                return ipString.startsWith('10.124.'); 
-            } else if (rbFilter === 'sosok') {
-                return ipString.startsWith('10.125.'); 
-            }
+            if (rbFilter === '56c') return ipString.startsWith('10.124.'); 
+            if (rbFilter === 'klaling') return ipString.startsWith('10.123.'); 
+            if (rbFilter === 'sosok') return ipString.startsWith('157.20.'); 
             return false;
         });
     }
     
-    // Terapkan juga jika ada kotak pencarian aktif
-    const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
+    // Update Angka Badge berdasarkan RB yang dipilih (sebelum dipotong status)
+    updateDeviceStats(rbFilteredDevices, true);
+    
+    let devicesToRender = rbFilteredDevices;
+    
+    // 2. FILTER BERDASARKAN STATUS (TOTAL / ONLINE / OFFLINE)
+    if (currentStatusFilter !== 'all') {
+        devicesToRender = devicesToRender.filter(device => {
+            const status = device.status || 'offline';
+            return status === currentStatusFilter;
+        });
+    }
+    
+    // 3. FILTER KOTAK SEARCH
+    const searchInput = document.getElementById('search-input');
+    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
     if (searchTerm !== '') {
         devicesToRender = devicesToRender.filter(device => {
             const serialNumber = (device.serial_number || '').toLowerCase();
@@ -1303,12 +1178,10 @@ function applyRbFilter() {
         });
     }
     
-    // Render hasil akhirnya
+    // 4. RENDER KE TABEL
     renderDevices(devicesToRender);
     updateDeviceCount(devicesToRender.length, allDevices.length);
-    updateDeviceStats(devicesToRender, true);
     
-    // Perbarui badge jumlah ONU di tab
     const onuBadge = document.getElementById('count-onu');
     if (onuBadge) {
         onuBadge.textContent = devicesToRender.length;

@@ -53,7 +53,7 @@ include __DIR__ . '/views/layouts/header.php';
                             </select>
                         </div>
 
-                        <button class="btn btn-sm btn-info text-white me-2" onclick="syncRbTags()" title="Auto-tag device baru berdasarkan IP">
+                        <button class="btn btn-sm btn-info text-white me-2 btn-primary" onclick="syncRbTags()" title="Auto-tag device baru berdasarkan IP">
                             <i class="bi bi-magic"></i> Sync Tags
                         </button>
 
