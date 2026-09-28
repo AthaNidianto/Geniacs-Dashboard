@@ -1314,3 +1314,80 @@ function applyRbFilter() {
         onuBadge.textContent = devicesToRender.length;
     }
 }
+
+// Auto-Tagging berdasarkan Segmen IP
+// Auto-Tagging berdasarkan Segmen IP
+async function syncRbTags() {
+    if (!allDevices || allDevices.length === 0) {
+        showToast('Tidak ada data device untuk disinkronisasi', 'warning');
+        return;
+    }
+
+    // Siapkan penampung untuk mengelompokkan ID perangkat yang belum punya tag
+    const rbMapping = {
+        'RB_56c': { prefix: '10.123.', ids: [] },
+        'RB_Klaling': { prefix: '10.124.', ids: [] },
+        'RB_Sosok': { prefix: '10.125.', ids: [] }
+    };
+
+    // Scan semua perangkat
+    allDevices.forEach(device => {
+        const ip = extractIP(device.ip_tr069);
+        if (ip === 'N/A') return;
+
+        // Cek apakah perangkat sudah memiliki tag RB (mengurangi beban API)
+        const tags = device.tags || [];
+        const hasRbTag = tags.some(t => ['rb_56c', 'rb_klaling', 'rb_sosok'].includes(t.toLowerCase()));
+
+        if (!hasRbTag) {
+            // Kelompokkan ID berdasarkan awalan IP
+            if (ip.startsWith(rbMapping['RB_56c'].prefix)) {
+                rbMapping['RB_56c'].ids.push(device.device_id);
+            } else if (ip.startsWith(rbMapping['RB_Klaling'].prefix)) {
+                rbMapping['RB_Klaling'].ids.push(device.device_id);
+            } else if (ip.startsWith(rbMapping['RB_Sosok'].prefix)) {
+                rbMapping['RB_Sosok'].ids.push(device.device_id);
+            }
+        }
+    });
+
+    // Hitung total device yang butuh di-tag
+    const totalToSync = rbMapping['RB_56c'].ids.length + rbMapping['RB_Klaling'].ids.length + rbMapping['RB_Sosok'].ids.length;
+    
+    if (totalToSync === 0) {
+        showToast('Semua device sudah memiliki Tag RB. Tidak ada yang perlu disinkronisasi.', 'info');
+        return;
+    }
+
+    // Minta konfirmasi dari user sebelum eksekusi massal
+    if (!confirm(`Ditemukan ${totalToSync} ONU baru tanpa Tag RB. Lanjutkan proses Auto-Tagging?`)) {
+        return;
+    }
+
+    showLoading();
+
+    try {
+        // Eksekusi API bulk-tag untuk setiap kelompok RB
+        for (const [tagName, data] of Object.entries(rbMapping)) {
+            if (data.ids.length > 0) {
+                await fetchAPI('/api/bulk-tag.php', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'add',
+                        device_ids: data.ids,
+                        tag: tagName // Mengirim teks '56c', 'Klaling', atau 'Sosok'
+                    })
+                });
+            }
+        }
+        
+        hideLoading();
+        showToast(`Berhasil menempelkan tag pada ${totalToSync} device!`, 'success');
+        loadDevices(); // Muat ulang tabel agar badge birunya langsung muncul
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Error saat sync tags:', error);
+        showToast('Terjadi kesalahan sistem saat sinkronisasi tag.', 'danger');
+    }
+}

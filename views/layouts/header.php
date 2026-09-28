@@ -37,12 +37,12 @@
                     <span>Devices</span>
                 </a>
             </li>
-            <li>
+            <!-- <li>
                 <a href="/map.php" class="<?php echo ($currentPage ?? '') === 'map' ? 'active' : ''; ?>" data-tooltip="Map">
                     <i class="bi bi-diagram-3"></i>
                     <span>Map</span>
                 </a>
-            </li>
+            </li> -->
             <li>
                 <a href="/configuration.php" class="<?php echo ($currentPage ?? '') === 'configuration' ? 'active' : ''; ?>" data-tooltip="Configuration">
                     <i class="bi bi-gear"></i>
