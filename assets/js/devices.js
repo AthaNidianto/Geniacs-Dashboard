@@ -249,24 +249,42 @@ async function renderDevices(devices) {
             clientsBadge = `<span class="badge bg-secondary">0</span>`;
         }
 
-        // RX Power badge with color based on signal strength
-        const rxPower = parseFloat(device.rx_power);
-        let rxBadgeClass = 'bg-secondary'; // Default for N/A
-        let rxDisplay = device.rx_power;
 
-        if (!isNaN(rxPower) && rxPower !== -999) {
-            if (rxPower > -20.00) {
-                rxBadgeClass = 'bg-success'; // Green: Good signal (above -20 dBm)
-            } else if (rxPower >= -23.00) {
-                rxBadgeClass = 'bg-warning'; // Yellow: Moderate signal (-20 to -23 dBm)
+// RX Power badge with color based on signal strength
+        const rxPower = parseFloat(device.rx_power);
+        let rxBadgeClass = 'bg-secondary'; // Default
+        let rxDisplay = 'N/A';
+
+        // 1. Paksa abu-abu kalau device offline atau nilai error (-999)
+        if (device.status !== 'online' || isNaN(rxPower) || rxPower === -999) {
+            rxBadgeClass = 'bg-secondary';
+            if (!isNaN(rxPower) && rxPower !== -999) {
+                rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
             } else {
-                rxBadgeClass = 'bg-danger'; // Red: Weak signal (below -23 dBm)
+                rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
+            }
+        } 
+        // 2. Logic 4 warna menggunakan tangga ke bawah (agar tidak ada celah desimal)
+        else {
+            if (rxPower > -13.00) {
+                // Lebih besar dari -13 (misal -12, -10) -> Merah
+                rxBadgeClass = 'bg-danger'; 
+            } else if (rxPower > -15.00) {
+                // Tembus ke sini artinya pasti <= -13.00
+                // Dari -13.00 sampai -14.99 -> Kuning
+                rxBadgeClass = 'bg-warning text-dark';
+            } else if (rxPower > -25.00) {
+                // Dari -15.00 sampai -24.99 -> Hijau
+                rxBadgeClass = 'bg-success';  
+            } else if (rxPower >= -28.00) {
+                // Dari -25.00 sampai -28.00 -> Kuning
+                rxBadgeClass = 'bg-warning text-dark';
+            } else {
+                // Sisa angka di bawah -28.00 (misal -29, -30) -> Merah
+                rxBadgeClass = 'bg-danger';
             }
             rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
-        } else {
-            rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
         }
-
         // Map button - conditional based on registration status
         let mapButton;
         if (isInMap) {
