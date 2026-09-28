@@ -71,26 +71,7 @@ include __DIR__ . '/views/layouts/header.php';
                         <i class="bi bi-wifi"></i> ONU <span class="badge bg-primary ms-1" id="count-onu">0</span>
                     </button>
                 </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="odp-tab" data-bs-toggle="tab" data-bs-target="#odp" type="button" role="tab" onclick="filterByType('odp')">
-                        <i class="bi bi-cube"></i> ODP <span class="badge bg-primary ms-1" id="count-odp">0</span>
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="odc-tab" data-bs-toggle="tab" data-bs-target="#odc" type="button" role="tab" onclick="filterByType('odc')">
-                        <i class="bi bi-box"></i> ODC <span class="badge bg-primary ms-1" id="count-odc">0</span>
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="olt-tab" data-bs-toggle="tab" data-bs-target="#olt" type="button" role="tab" onclick="filterByType('olt')">
-                        <i class="bi bi-broadcast-pin"></i> OLT <span class="badge bg-primary ms-1" id="count-olt">0</span>
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="server-tab" data-bs-toggle="tab" data-bs-target="#server" type="button" role="tab" onclick="filterByType('server')">
-                        <i class="bi bi-server"></i> Server <span class="badge bg-primary ms-1" id="count-server">0</span>
-                    </button>
-                </li>
+
             </ul>
             <!-- Search Box and Pagination Controls -->
             <div class="row mb-3">

@@ -11,6 +11,8 @@
 *.swp
 *.swo
 *~
+.docker-compose.yaml
+Dockerfile
 
 # OS
 .DS_Store

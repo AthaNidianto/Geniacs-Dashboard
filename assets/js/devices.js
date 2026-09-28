@@ -450,20 +450,11 @@ function updateDeviceTypeCountsFromMap(devices, mapCounts) {
     // Count ALL devices from GenieACS (no filtering by product_class)
     const onuCount = devices.length;
 
-    const counts = {
-        onu: onuCount, // From all devices in GenieACS
-        odp: mapCounts.odp || 0, // From map
-        odc: mapCounts.odc || 0, // From map
-        olt: mapCounts.olt || 0, // From map
-        server: mapCounts.server || 0 // From map
-    };
 
-    // Update badges
-    document.getElementById('count-onu').textContent = counts.onu;
-    document.getElementById('count-odp').textContent = counts.odp;
-    document.getElementById('count-odc').textContent = counts.odc;
-    document.getElementById('count-olt').textContent = counts.olt;
-    document.getElementById('count-server').textContent = counts.server;
+    const onuBadge = document.getElementById('count-onu');
+    if (onuBadge) {
+        onuBadge.textContent = onuCount;
+    }
 }
 
 // Generate table header based on device type
@@ -1271,3 +1262,55 @@ document.addEventListener('visibilitychange', function() {
 
     }
 });
+
+// Filter Devices by RB Dropdown
+function applyRbFilter() {
+    const rbFilter = document.getElementById('rbFilter').value.toLowerCase();
+    
+    // Reset to page 1 when filter changes
+    currentPage = 1;
+    
+    let devicesToRender = allDevices;
+    
+    // Jika bukan "all", saring berdasarkan parameter RB
+    if (rbFilter !== 'all') {
+        devicesToRender = allDevices.filter(device => {
+            const ipString = extractIP(device.ip_tr069);
+            
+            // Logika pencocokan IP Segmen dengan RB
+            if (rbFilter === '56c') {
+                return ipString.startsWith('10.123.'); 
+            } else if (rbFilter === 'klaling') {
+                return ipString.startsWith('10.124.'); 
+            } else if (rbFilter === 'sosok') {
+                return ipString.startsWith('10.125.'); 
+            }
+            return false;
+        });
+    }
+    
+    // Terapkan juga jika ada kotak pencarian aktif
+    const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
+    if (searchTerm !== '') {
+        devicesToRender = devicesToRender.filter(device => {
+            const serialNumber = (device.serial_number || '').toLowerCase();
+            const macAddress = (device.mac_address || '').toLowerCase();
+            let tagsMatch = false;
+            if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
+                tagsMatch = device.tags.some(tag => tag.toLowerCase().includes(searchTerm));
+            }
+            return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || tagsMatch;
+        });
+    }
+    
+    // Render hasil akhirnya
+    renderDevices(devicesToRender);
+    updateDeviceCount(devicesToRender.length, allDevices.length);
+    updateDeviceStats(devicesToRender, true);
+    
+    // Perbarui badge jumlah ONU di tab
+    const onuBadge = document.getElementById('count-onu');
+    if (onuBadge) {
+        onuBadge.textContent = devicesToRender.length;
+    }
+}
