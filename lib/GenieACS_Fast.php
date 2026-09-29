@@ -193,44 +193,44 @@ class GenieACS_Fast {
         }
         $data['pppoe_username'] = $pppoeUsername;
 
-        // Connected Devices Count
+// Connected Devices Count (Optimized for Huawei, ZTE & TR-181)
         $connectedDevices = 0;
-        if (isset($device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['Host'])) {
+        
+        // Coba baca dari TR-069 (Format umum Huawei & ZTE lama)
+        if (isset($device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['HostNumberOfEntries']['_value'])) {
+            $connectedDevices = intval($device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['HostNumberOfEntries']['_value']);
+        }
+        // Coba baca dari TR-181 (Format ZTE baru / Nokia)
+        elseif (isset($device['Device']['Hosts']['HostNumberOfEntries']['_value'])) {
+            $connectedDevices = intval($device['Device']['Hosts']['HostNumberOfEntries']['_value']);
+        }
+        // Fallback: Hitung manual jika HostNumberOfEntries tidak didukung tapi Host Array tersedia
+        elseif (isset($device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['Host']) && is_array($device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['Host'])) {
             $hosts = $device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['Host'];
-            $deviceLastInformTime = $lastInformTimestamp;
-
-            foreach ($hosts as $hostId => $hostData) {
-                // Skip metadata fields
-                if (strpos($hostId, '_') === 0) {
-                    continue;
-                }
-
-                $ipAddress = $hostData['IPAddress']['_value'] ?? null;
-                $macAddress = $hostData['MACAddress']['_value'] ?? null;
-                $timestamp = $hostData['_timestamp'] ?? null;
-
-                if ($ipAddress && $macAddress) {
-                    $isRecentlyActive = true;
-
-                    if ($timestamp && $deviceLastInformTime) {
-                        $hostTimestamp = strtotime($timestamp);
-                        if ($hostTimestamp !== false) {
-                            $threeHoursBefore = $deviceLastInformTime - (3 * 3600);
-                            $threeHoursAfter = $deviceLastInformTime + (3 * 3600);
-                            $isRecentlyActive = ($hostTimestamp >= $threeHoursBefore && $hostTimestamp <= $threeHoursAfter);
-                        }
-                    }
-
-                    if ($isRecentlyActive) {
-                        $connectedDevices++;
-                    }
+            $activeCount = 0;
+            
+            foreach ($hosts as $key => $host) {
+                // Abaikan jika key adalah metadata bawaan GenieACS (dimulai dengan '_')
+                if (strpos((string)$key, '_') === 0) continue;
+                
+                // Cek status aktif perangkat (biasanya ada parameter Active)
+                $isActive = isset($host['Active']['_value']) ? $host['Active']['_value'] : true;
+                
+                // Pastikan IP dan MAC tidak kosong
+                $hasIP = !empty($host['IPAddress']['_value']);
+                $hasMAC = !empty($host['MACAddress']['_value']);
+                
+                // Hitung sebagai aktif jika kondisinya terpenuhi
+                if (($isActive === true || $isActive === '1' || $isActive === 'true') && $hasMAC && $hasIP) {
+                    $activeCount++;
                 }
             }
+            $connectedDevices = $activeCount;
         }
 
         $data['connected_devices_count'] = $connectedDevices;
 
-        // Tags - extract from _tags field (array of tag names)
+            // Tags - extract from _tags field (array of tag names)
         $tags = [];
         if (isset($device['_tags']) && is_array($device['_tags'])) {
             $tags = $device['_tags'];
