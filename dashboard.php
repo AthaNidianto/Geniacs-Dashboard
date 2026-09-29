@@ -61,56 +61,79 @@ include __DIR__ . '/views/layouts/header.php';
         </div>
     </div>
 
-    <!-- Device Overview & Uplink -->
-    <div class="row">
-        <div class="col-lg-6">
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-bar-chart"></i> Device Overview
-                    <button class="btn btn-sm btn-primary float-end" onclick="loadDashboardData()">
-                        <i class="bi bi-arrow-clockwise"></i> Refresh
-                    </button>
-                </div>
-                <div class="card-body">
-                    <div style="max-width: 300px; margin: 0 auto;">
-                        <canvas id="deviceChart"></canvas>
-                    </div>
-                </div>
+<!-- 4 Grid Charts -->
+<div class="row mb-4">
+    <!-- 1. Device Overview -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-bar-chart"></i> Device Overview
+                <button class="btn btn-sm btn-primary float-end" onclick="loadDashboardData()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
             </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-reception-4"></i> Uplink Signal Strength
-                    <button class="btn btn-sm btn-primary float-end" onclick="loadUplinkData()">
-                        <i class="bi bi-arrow-clockwise"></i> Refresh
-                    </button>
-                </div>
-                <div class="card-body">
-                    <div style="max-width: 300px; margin: 0 auto;">
-                        <canvas id="uplinkChart"></canvas>
-                    </div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div style="width: 100%; max-width: 300px;">
+                    <canvas id="deviceChart"></canvas>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Recent Devices -->
-    <div class="row mt-4">
-        <div class="col-lg-12">
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-activity"></i> Recent Device Activity
-                </div>
-                <div class="card-body">
-                    <div id="recent-devices">
-                        <div class="spinner"></div>
-                    </div>
+    <!-- 2. Uplink Signal -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-reception-4"></i> Uplink Signal Strength
+                <button class="btn btn-sm btn-primary float-end" onclick="loadUplinkData()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div style="width: 100%; max-width: 300px;">
+                    <canvas id="uplinkChart"></canvas>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- 3. Manufacturer (Merek) -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-diagram-3"></i> Merek Perangkat
+                <button class="btn btn-sm btn-primary float-end" onclick="loadDashboardData()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div style="width: 100%; max-width: 300px;">
+                    <canvas id="manufacturerChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Tipe PON -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-hdd-network"></i> Tipe Teknologi PON
+                <button class="btn btn-sm btn-primary float-end" onclick="loadDashboardData()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div style="width: 100%; max-width: 300px;">
+                    <canvas id="ponTypeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php endif; ?>
+
 
 <!-- Summon Confirmation Modal -->
 <div class="modal fade" id="summonModal" tabindex="-1">
@@ -175,6 +198,8 @@ let uplinkChart = null;
 let dashboardFetchInProgress = false;
 let uplinkFetchInProgress = false;
 let recentDevicesFetchInProgress = false;
+let manufacturerChart = null;
+let ponTypeChart = null;
 
 async function loadDashboardData() {
     // Prevent concurrent requests
@@ -200,6 +225,8 @@ async function loadDashboardData() {
 
             // Update chart
             updateChart(stats);
+            if (stats.manufacturers) updateManufacturerChart(stats.manufacturers);
+            if (stats.pon_types) updatePonTypeChart(stats.pon_types);
         } else {
             if (result && result.error !== 'timeout') {
                 showToast('Gagal memuat data dashboard', 'danger');
@@ -334,173 +361,235 @@ function updateUplinkChart(data) {
     });
 }
 
+function updateManufacturerChart(manufacturers) {
+    const ctx = document.getElementById('manufacturerChart').getContext('2d');
+    if (manufacturerChart) manufacturerChart.destroy();
+    if (Object.keys(manufacturers).length === 0) return;
+
+    // Perbanyak warna agar tidak kehabisan saat ada merek baru
+    const bgColors = ['rgba(54, 162, 235, 0.8)', 'rgba(255, 99, 132, 0.8)', 'rgba(255, 206, 86, 0.8)', 'rgba(75, 192, 192, 0.8)', 'rgba(153, 102, 255, 0.8)', 'rgba(255, 159, 64, 0.8)', 'rgba(199, 199, 199, 0.8)'];
+    const borderColors = ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)', 'rgba(199, 199, 199, 1)'];
+
+    manufacturerChart = new Chart(ctx, {
+        type: 'doughnut', // Disamakan agar bolong di tengah
+        data: {
+            labels: Object.keys(manufacturers),
+            datasets: [{
+                data: Object.values(manufacturers),
+                backgroundColor: bgColors.slice(0, Object.keys(manufacturers).length),
+                borderColor: borderColors.slice(0, Object.keys(manufacturers).length),
+                borderWidth: 2
+            }]
+        },
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: true,
+            plugins: { 
+                legend: { 
+                    position: 'bottom',
+                    labels: { boxWidth: 10, padding: 5, font: { size: 9 } } // Disamakan dengan ukuran kotak grafik Uplink
+                } 
+            } 
+        }
+    });
+}
+
+function updatePonTypeChart(ponTypes) {
+    const ctx = document.getElementById('ponTypeChart').getContext('2d');
+    if (ponTypeChart) ponTypeChart.destroy();
+    if (Object.keys(ponTypes).length === 0) return;
+
+    ponTypeChart = new Chart(ctx, {
+        type: 'doughnut', // Diubah dari pie menjadi doughnut
+        data: {
+            labels: Object.keys(ponTypes),
+            datasets: [{
+                data: Object.values(ponTypes),
+                backgroundColor: ['rgba(153, 102, 255, 0.8)', 'rgba(255, 159, 64, 0.8)', 'rgba(201, 203, 207, 0.8)', 'rgba(54, 162, 235, 0.8)'],
+                borderColor: ['rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)', 'rgba(201, 203, 207, 1)', 'rgba(54, 162, 235, 1)'],
+                borderWidth: 2
+            }]
+        },
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: true,
+            plugins: { 
+                legend: { 
+                    position: 'bottom',
+                    labels: { boxWidth: 10, padding: 5, font: { size: 9 } } // Disamakan dengan ukuran kotak grafik Uplink
+                } 
+            } 
+        }
+    });
+}
+
 function extractIP(ipString) {
     if (!ipString || ipString === 'N/A') return 'N/A';
     const match = ipString.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
     return match ? match[1] : 'N/A';
 }
 
-async function loadRecentDevices() {
-    // Prevent concurrent requests
-    if (recentDevicesFetchInProgress) {
-        console.debug('[DASHBOARD] Recent devices fetch already in progress, skipping...');
-        return;
-    }
+// async function loadRecentDevices() {
+//     // Prevent concurrent requests
+//     if (recentDevicesFetchInProgress) {
+//         console.debug('[DASHBOARD] Recent devices fetch already in progress, skipping...');
+//         return;
+//     }
 
-    const container = document.getElementById('recent-devices');
-    container.innerHTML = '<div class="spinner"></div>';
+//     const container = document.getElementById('recent-devices');
+//     container.innerHTML = '<div class="spinner"></div>';
 
-    recentDevicesFetchInProgress = true;
-    try {
-        const result = await fetchAPI('/api/recent-devices.php', { timeout: 25000 });
+//     recentDevicesFetchInProgress = true;
+//     try {
+//         const result = await fetchAPI('/api/recent-devices.php', { timeout: 25000 });
 
-        if (result && result.success) {
-            const devices = result.devices;
+//         if (result && result.success) {
+//             const devices = result.devices;
 
-            if (devices.length === 0) {
-                container.innerHTML = '<p class="text-center text-muted">No recent device activity</p>';
-                return;
-            }
+//             if (devices.length === 0) {
+//                 container.innerHTML = '<p class="text-center text-muted">No recent device activity</p>';
+//                 return;
+//             }
 
-            // Fetch map status for all devices in parallel
-            const mapStatusPromises = devices.map(device =>
-                fetchAPI('/api/get-onu-location.php?serial_number=' + encodeURIComponent(device.serial_number))
-                    .then(result => ({
-                        serial: device.serial_number,
-                        inMap: result && result.success && result.location && result.location.found,
-                        itemType: result?.location?.item_type || 'onu',
-                        itemId: result?.location?.onu?.id || result?.location?.server?.id || null
-                    }))
-                    .catch(() => ({ serial: device.serial_number, inMap: false, itemType: 'onu', itemId: null }))
-            );
+//             // Fetch map status for all devices in parallel
+//             const mapStatusPromises = devices.map(device =>
+//                 fetchAPI('/api/get-onu-location.php?serial_number=' + encodeURIComponent(device.serial_number))
+//                     .then(result => ({
+//                         serial: device.serial_number,
+//                         inMap: result && result.success && result.location && result.location.found,
+//                         itemType: result?.location?.item_type || 'onu',
+//                         itemId: result?.location?.onu?.id || result?.location?.server?.id || null
+//                     }))
+//                     .catch(() => ({ serial: device.serial_number, inMap: false, itemType: 'onu', itemId: null }))
+//             );
 
-            const mapStatuses = await Promise.all(mapStatusPromises);
-            const mapStatusMap = {};
-            mapStatuses.forEach(status => {
-                mapStatusMap[status.serial] = {
-                    inMap: status.inMap,
-                    itemType: status.itemType,
-                    itemId: status.itemId
-                };
-            });
+//             const mapStatuses = await Promise.all(mapStatusPromises);
+//             const mapStatusMap = {};
+//             mapStatuses.forEach(status => {
+//                 mapStatusMap[status.serial] = {
+//                     inMap: status.inMap,
+//                     itemType: status.itemType,
+//                     itemId: status.itemId
+//                 };
+//             });
 
-            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr>';
-            html += '<th>SN</th>';
-            html += '<th>MAC</th>';
-            html += '<th>Tipe</th>';
-            html += '<th>IP</th>';
-            html += '<th>SSID</th>';
-            html += '<th>PPPoE</th>';
-            html += '<th>Rx</th>';
-            html += '<th>Temp</th>';
-            html += '<th>Client</th>';
-            html += '<th>Status</th>';
-            html += '<th>Action</th>';
-            html += '</tr></thead><tbody>';
+//             let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr>';
+//             html += '<th>SN</th>';
+//             html += '<th>MAC</th>';
+//             html += '<th>Tipe</th>';
+//             html += '<th>IP</th>';
+//             html += '<th>SSID</th>';
+//             html += '<th>PPPoE</th>';
+//             html += '<th>Rx</th>';
+//             html += '<th>Temp</th>';
+//             html += '<th>Client</th>';
+//             html += '<th>Status</th>';
+//             html += '<th>Action</th>';
+//             html += '</tr></thead><tbody>';
 
-            devices.forEach(device => {
-                const mapInfo = mapStatusMap[device.serial_number] || { inMap: false, itemType: 'onu', itemId: null };
-                const isInMap = mapInfo.inMap;
-                const ipAddress = extractIP(device.ip_tr069);
+//             devices.forEach(device => {
+//                 const mapInfo = mapStatusMap[device.serial_number] || { inMap: false, itemType: 'onu', itemId: null };
+//                 const isInMap = mapInfo.inMap;
+//                 const ipAddress = extractIP(device.ip_tr069);
 
-                // Create clickable IP link if IP is valid
-                let ipDisplay;
-                if (ipAddress !== 'N/A' && ipAddress !== '') {
-                    ipDisplay = `<a href="http://${ipAddress}" target="_blank" rel="noopener noreferrer" title="Open ${ipAddress} in new tab">${ipAddress}</a>`;
-                } else {
-                    ipDisplay = ipAddress;
-                }
+//                 // Create clickable IP link if IP is valid
+//                 let ipDisplay;
+//                 if (ipAddress !== 'N/A' && ipAddress !== '') {
+//                     ipDisplay = `<a href="http://${ipAddress}" target="_blank" rel="noopener noreferrer" title="Open ${ipAddress} in new tab">${ipAddress}</a>`;
+//                 } else {
+//                     ipDisplay = ipAddress;
+//                 }
 
-                // Connected clients count with badge
-                const clientsCount = device.connected_devices_count || 0;
-                let clientsBadge = '';
-                if (clientsCount > 0) {
-                    clientsBadge = `<span class="badge bg-primary">${clientsCount}</span>`;
-                } else {
-                    clientsBadge = `<span class="badge bg-secondary">0</span>`;
-                }
+//                 // Connected clients count with badge
+//                 const clientsCount = device.connected_devices_count || 0;
+//                 let clientsBadge = '';
+//                 if (clientsCount > 0) {
+//                     clientsBadge = `<span class="badge bg-primary">${clientsCount}</span>`;
+//                 } else {
+//                     clientsBadge = `<span class="badge bg-secondary">0</span>`;
+//                 }
 
-                // RX Power badge with color based on signal strength
-                const rxPower = parseFloat(device.rx_power);
-                let rxBadgeClass = 'bg-secondary'; // Default for N/A
-                let rxDisplay = device.rx_power;
+//                 // RX Power badge with color based on signal strength
+//                 const rxPower = parseFloat(device.rx_power);
+//                 let rxBadgeClass = 'bg-secondary'; // Default for N/A
+//                 let rxDisplay = device.rx_power;
 
-                if (!isNaN(rxPower) && rxPower !== -999) {
-                    if (rxPower > -20.00) {
-                        rxBadgeClass = 'bg-success'; // Green: Good signal (above -20 dBm)
-                    } else if (rxPower >= -23.00) {
-                        rxBadgeClass = 'bg-warning'; // Yellow: Moderate signal (-20 to -23 dBm)
-                    } else {
-                        rxBadgeClass = 'bg-danger'; // Red: Weak signal (below -23 dBm)
-                    }
-                    rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
-                } else {
-                    rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
-                }
+//                 if (!isNaN(rxPower) && rxPower !== -999) {
+//                     if (rxPower > -20.00) {
+//                         rxBadgeClass = 'bg-success'; // Green: Good signal (above -20 dBm)
+//                     } else if (rxPower >= -23.00) {
+//                         rxBadgeClass = 'bg-warning'; // Yellow: Moderate signal (-20 to -23 dBm)
+//                     } else {
+//                         rxBadgeClass = 'bg-danger'; // Red: Weak signal (below -23 dBm)
+//                     }
+//                     rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
+//                 } else {
+//                     rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
+//                 }
 
-                // Status badge with ping
-                let statusBadge;
-                if (device.status === 'online') {
-                    const ping = device.ping || '-';
-                    statusBadge = `<span class="badge online">ON [${ping}ms]</span>`;
-                } else {
-                    statusBadge = `<span class="badge offline">OFF [-]</span>`;
-                }
+//                 // Status badge with ping
+//                 let statusBadge;
+//                 if (device.status === 'online') {
+//                     const ping = device.ping || '-';
+//                     statusBadge = `<span class="badge online">ON [${ping}ms]</span>`;
+//                 } else {
+//                     statusBadge = `<span class="badge offline">OFF [-]</span>`;
+//                 }
 
-                // Map button - conditional based on registration status
-                let mapButton;
-                if (isInMap) {
-                    // Green button - opens map in new tab
-                    let mapUrl;
-                    if (mapInfo.itemType === 'mikrotik') {
-                        // For MikroTik devices, focus on server
-                        mapUrl = `/map.php?focus_type=server&focus_id=${mapInfo.itemId}`;
-                    } else {
-                        // For ONU devices, focus on ONU
-                        mapUrl = `/map.php?focus_type=onu&focus_serial=${encodeURIComponent(device.serial_number)}`;
-                    }
-                    mapButton = `<button class="btn btn-sm btn-success me-1" onclick="window.open('${mapUrl}', '_blank')" title="View on Map"><i class="bi bi-map"></i></button>`;
-                } else {
-                    // Gray button - shows alert
-                    mapButton = `<button class="btn btn-sm btn-secondary me-1" onclick="showNotInMapAlert('${encodeURIComponent(device.serial_number)}')" title="Not Registered in Map"><i class="bi bi-map"></i></button>`;
-                }
+//                 // Map button - conditional based on registration status
+//                 let mapButton;
+//                 if (isInMap) {
+//                     // Green button - opens map in new tab
+//                     let mapUrl;
+//                     if (mapInfo.itemType === 'mikrotik') {
+//                         // For MikroTik devices, focus on server
+//                         mapUrl = `/map.php?focus_type=server&focus_id=${mapInfo.itemId}`;
+//                     } else {
+//                         // For ONU devices, focus on ONU
+//                         mapUrl = `/map.php?focus_type=onu&focus_serial=${encodeURIComponent(device.serial_number)}`;
+//                     }
+//                     mapButton = `<button class="btn btn-sm btn-success me-1" onclick="window.open('${mapUrl}', '_blank')" title="View on Map"><i class="bi bi-map"></i></button>`;
+//                 } else {
+//                     // Gray button - shows alert
+//                     mapButton = `<button class="btn btn-sm btn-secondary me-1" onclick="showNotInMapAlert('${encodeURIComponent(device.serial_number)}')" title="Not Registered in Map"><i class="bi bi-map"></i></button>`;
+//                 }
 
-                html += '<tr>';
-                html += `<td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>`;
-                html += `<td>${device.mac_address}</td>`;
-                html += `<td>${device.product_class || 'N/A'}</td>`;
-                html += `<td>${ipDisplay}</td>`;
-                html += `<td>${device.wifi_ssid}</td>`;
-                html += `<td>${device.pppoe_username || 'N/A'}</td>`;
-                html += `<td>${rxDisplay}</td>`;
-                html += `<td>${device.temperature}°C</td>`;
-                html += `<td class="text-center">${clientsBadge}</td>`;
-                html += `<td>${statusBadge}</td>`;
-                html += `<td>`;
-                html += mapButton;
-                html += `<button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device"><i class="bi bi-lightning-charge"></i></button>`;
-                html += `</td>`;
-                html += '</tr>';
-            });
+//                 html += '<tr>';
+//                 html += `<td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>`;
+//                 html += `<td>${device.mac_address}</td>`;
+//                 html += `<td>${device.product_class || 'N/A'}</td>`;
+//                 html += `<td>${ipDisplay}</td>`;
+//                 html += `<td>${device.wifi_ssid}</td>`;
+//                 html += `<td>${device.pppoe_username || 'N/A'}</td>`;
+//                 html += `<td>${rxDisplay}</td>`;
+//                 html += `<td>${device.temperature}°C</td>`;
+//                 html += `<td class="text-center">${clientsBadge}</td>`;
+//                 html += `<td>${statusBadge}</td>`;
+//                 html += `<td>`;
+//                 html += mapButton;
+//                 html += `<button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device"><i class="bi bi-lightning-charge"></i></button>`;
+//                 html += `</td>`;
+//                 html += '</tr>';
+//             });
 
-            html += '</tbody></table></div>';
-            container.innerHTML = html;
-        } else {
-            if (result && result.error !== 'timeout') {
-                container.innerHTML = '<p class="text-center text-danger">Failed to load recent devices</p>';
-            } else {
-                container.innerHTML = '<p class="text-center text-warning">Request timeout - please refresh</p>';
-            }
-        }
-    } catch (error) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('Error loading recent devices:', error);
-        }
-        container.innerHTML = '<p class="text-center text-danger">Error loading data</p>';
-    } finally {
-        recentDevicesFetchInProgress = false;
-    }
-}
+//             html += '</tbody></table></div>';
+//             container.innerHTML = html;
+//         } else {
+//             if (result && result.error !== 'timeout') {
+//                 container.innerHTML = '<p class="text-center text-danger">Failed to load recent devices</p>';
+//             } else {
+//                 container.innerHTML = '<p class="text-center text-warning">Request timeout - please refresh</p>';
+//             }
+//         }
+//     } catch (error) {
+//         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+//             console.error('Error loading recent devices:', error);
+//         }
+//         container.innerHTML = '<p class="text-center text-danger">Error loading data</p>';
+//     } finally {
+//         recentDevicesFetchInProgress = false;
+//     }
+// }
 
 let currentSummonDeviceId = null;
 
@@ -551,12 +640,11 @@ document.addEventListener('DOMContentLoaded', function() {
     <?php if ($genieacsConfigured): ?>
         loadDashboardData();
         loadUplinkData();
-        loadRecentDevices();
+        
         // Auto refresh every 30 seconds
         setInterval(() => {
             loadDashboardData();
             loadUplinkData();
-            loadRecentDevices();
         }, 30000);
     <?php endif; ?>
 });
