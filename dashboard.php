@@ -291,18 +291,18 @@ function updateUplinkChart(data) {
     uplinkChart = new Chart(ctx, {
         type: 'doughnut',
         data: {
-            labels: ['Excellent', 'Good', 'Fair', 'Poor', 'No Signal'],
+            labels: ['Good', 'Fair', 'Poor', 'No Signal'],
             datasets: [{
-                data: [data.excellent, data.good, data.fair, data.poor, data.no_signal],
+                data: [ data.good, data.fair, data.poor, data.no_signal],
                 backgroundColor: [
-                    'rgba(28, 200, 138, 0.8)',  // Excellent - green
+                    // 'rgba(28, 200, 138, 0.8)',  // Excellent - green
                     'rgba(52, 152, 219, 0.8)',  // Good - blue
                     'rgba(241, 196, 15, 0.8)',  // Fair - yellow
                     'rgba(231, 76, 60, 0.8)',   // Poor - red
                     'rgba(149, 165, 166, 0.8)'  // No signal - gray
                 ],
                 borderColor: [
-                    'rgba(28, 200, 138, 1)',
+                    // 'rgba(28, 200, 138, 1)',
                     'rgba(52, 152, 219, 1)',
                     'rgba(241, 196, 15, 1)',
                     'rgba(231, 76, 60, 1)',

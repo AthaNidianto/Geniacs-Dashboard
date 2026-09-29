@@ -38,7 +38,7 @@ if (!$devicesResult['success']) {
 }
 
 // Categorize devices by RX Power signal strength
-$excellent = 0; // > -20 dBm
+// $excellent = 0; // > -20 dBm
 $good = 0;      // -20 to -25 dBm
 $fair = 0;      // -25 to -28 dBm
 $poor = 0;      // < -28 dBm
@@ -73,7 +73,7 @@ foreach ($devicesResult['data'] as $device) {
 jsonResponse([
     'success' => true,
     'data' => [
-        'excellent' => $excellent,
+        // 'excellent' => $excellent,
         'good' => $good,
         'fair' => $fair,
         'poor' => $poor,
