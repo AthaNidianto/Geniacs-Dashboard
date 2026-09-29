@@ -56,11 +56,13 @@ foreach ($devicesResult['data'] as $device) {
     } else {
         $rxPower = floatval($rxPower);
 
-        if ($rxPower > -20) {
-            $excellent++;
-        } elseif ($rxPower >= -25) {
+        if ($rxPower > -13) {
+            $poor++;
+        } elseif ($rxPower > -15) {
+            $fair++;
+        } elseif ($rxPower > -25) {
             $good++;
-        } elseif ($rxPower >= -28) {
+        } elseif ($rxPower > -28) {
             $fair++;
         } else {
             $poor++;

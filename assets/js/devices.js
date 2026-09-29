@@ -1161,9 +1161,9 @@ function applyRbFilter() {
     if (rbFilter !== 'all') {
         rbFilteredDevices = allDevices.filter(device => {
             const ipString = extractIP(device.ip_tr069);
-            if (rbFilter === '56c') return ipString.startsWith('10.124.'); 
-            if (rbFilter === 'klaling') return ipString.startsWith('10.123.'); 
-            if (rbFilter === 'sosok') return ipString.startsWith('157.20.'); 
+            if (rbFilter === '56c') return ipString.startsWith('10.123.'); 
+            if (rbFilter === 'klaling') return ipString.startsWith('10.124.'); 
+            if (rbFilter === 'sosok') return ipString.startsWith('10.125.'); 
             return false;
         });
     }
