@@ -222,19 +222,39 @@ class GenieACS {
      * @param string $deviceId Device ID
      * @return array Response with success status
      */
+/**
+     * Summon device, fetch admin credentials AND Connected Clients
+     */
     public function summonAndFetchAdminCredentials($deviceId) {
         $encodedId = rawurlencode($deviceId);
 
-        // Connection request + Refresh VirtualParameters object
+        // Task 1: Summon modem dan refresh VirtualParameters (buat admin password)
         $endpoint = "/devices/{$encodedId}/tasks?timeout=3000&connection_request";
-
-        // Refresh all VirtualParameters - this triggers evaluation of superAdmin/superPassword
-        $data = [
+        $dataAdmin = [
             'name' => 'refreshObject',
             'objectName' => 'VirtualParameters'
         ];
+        
+        // Eksekusi Task 1
+        $result = $this->request($endpoint, 'POST', $dataAdmin);
+        
+        if ($result['success']) {
+            // Task 2: Paksa modem lapor daftar Client/Host (Standar TR-098 / Mayoritas Modem)
+            $dataHostsTR098 = [
+                'name' => 'refreshObject',
+                'objectName' => 'InternetGatewayDevice.LANDevice.1.Hosts'
+            ];
+            $this->request($endpoint, 'POST', $dataHostsTR098);
+            
+            // Task 3: Paksa modem lapor daftar Client/Host (Standar TR-181 / Modem Baru)
+            $dataHostsTR181 = [
+                'name' => 'refreshObject',
+                'objectName' => 'Device.Hosts'
+            ];
+            $this->request($endpoint, 'POST', $dataHostsTR181);
+        }
 
-        return $this->request($endpoint, 'POST', $data);
+        return $result;
     }
 
     /**
