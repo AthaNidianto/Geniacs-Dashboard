@@ -736,6 +736,7 @@ function resetSortIcons() {
 
 // currentSummonDeviceId defined in devices-state.js
 
+
 function summonDeviceQuick(deviceId) {
     currentSummonDeviceId = deviceId;
     document.getElementById('summon-device-id').textContent = deviceId;
@@ -1280,5 +1281,73 @@ async function syncRbTags() {
         hideLoading();
         console.error('Error saat sync tags:', error);
         showToast('Terjadi kesalahan sistem saat sinkronisasi tag.', 'danger');
+    }
+}
+
+async function summonSelectedDevices() {
+    let deviceIds = [];
+    
+    // Ambil ID dari variabel global atau checkbox
+    if (typeof selectedDevices !== 'undefined' && selectedDevices.size > 0) {
+        deviceIds = Array.from(selectedDevices);
+    } else {
+        const checkedBoxes = document.querySelectorAll('tbody input[type="checkbox"]:checked');
+        if (checkedBoxes.length > 0) {
+            deviceIds = Array.from(checkedBoxes).map(cb => {
+                return cb.value || cb.getAttribute('data-id') || cb.getAttribute('data-device-id');
+            });
+        }
+    }
+
+    // Filter array dari nilai kosong
+    deviceIds = deviceIds.filter(id => id && id.trim() !== '' && id !== 'on');
+
+    if (deviceIds.length === 0) {
+        showToast('Pilih setidaknya satu device di tabel untuk disummon!', 'warning');
+        return;
+    }
+
+    if (!confirm(`Yakin ingin melakukan Summon massal pada ${deviceIds.length} device? Sistem akan memproses secara bertahap (5 device per sesi) agar server tidak RTO.`)) {
+        return;
+    }
+
+    showLoading(); 
+    
+    // VARIABEL CHUNKING (CICILAN)
+    const chunkSize = 5; // Eksekusi 5 device sekaligus per request API
+    let successTotal = 0;
+    let failTotal = 0;
+
+    try {
+        // Looping untuk mengirim data dengan cara dicicil
+        for (let i = 0; i < deviceIds.length; i += chunkSize) {
+            const chunk = deviceIds.slice(i, i + chunkSize);
+            
+            // Opsional: Tampilkan progress di console browser
+            console.log(`Memproses batch ${Math.floor(i/chunkSize) + 1} (Device ${i + 1} - ${i + chunk.length} dari ${deviceIds.length})...`);
+            
+            // Tembak API per 5 device
+            const result = await fetchAPI('/api/summon-multiple.php', {
+                method: 'POST',
+                body: JSON.stringify({ device_ids: chunk })
+            });
+
+            if (result && result.success) {
+                successTotal += (result.success_count || 0);
+                failTotal += (result.fail_count || 0);
+            } else {
+                failTotal += chunk.length;
+            }
+        }
+
+        hideLoading();
+        showToast(`Proses selesai! Berhasil: ${successTotal} device. Gagal/RTO: ${failTotal} device.`, 'success');
+        
+        loadDevices(); // Refresh tabel
+
+    } catch (error) {
+        hideLoading();
+        console.error("Error saat summon massal:", error);
+        showToast('Terjadi kesalahan sistem di tengah proses summon.', 'danger');
     }
 }

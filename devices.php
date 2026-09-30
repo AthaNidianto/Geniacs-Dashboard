@@ -37,6 +37,9 @@ include __DIR__ . '/views/layouts/header.php';
                         <button class="btn btn-sm btn-warning" onclick="showBulkUntagModal()" title="Remove Tag from Selected Devices" style="margin-left: 5px;">
                             <i class="bi bi-tags"></i> Untag
                         </button>
+                        <button class="btn btn-sm btn-info text-white" id="btn-bulk-summon" onclick="summonSelectedDevices()">
+                            <i class="bi bi-lightning-charge"></i> Summon
+                        </button>
                         <button class="btn btn-sm btn-danger" onclick="showBulkDeleteModal()" title="Delete Selected Devices" style="margin-left: 5px;">
                             <i class="bi bi-trash"></i> Delete
                         </button>
