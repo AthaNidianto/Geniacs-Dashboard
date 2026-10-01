@@ -4,8 +4,17 @@
  * Global state variables are defined in devices-state.js
  */
 
+// State tambahan (khusus file ini)
+let currentStatusFilter = 'all'; // Filter status aktif: all | online | offline
+let bulkBusy = false;            // true selama bulk action jalan (auto-refresh di-pause)
 
+// ---------------------------------------------------------------------------
+// LOAD DATA
+// ---------------------------------------------------------------------------
 async function loadDevices(isAutoRefresh = false) {
+    // Pause auto-refresh selama bulk action (supaya server nggak dobel beban)
+    if (isAutoRefresh && bulkBusy) return;
+
     // Save scroll position before refresh (for auto-refresh)
     if (isAutoRefresh) {
         savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
@@ -17,6 +26,9 @@ async function loadDevices(isAutoRefresh = false) {
     if (!isAutoRefresh) {
         tbody.innerHTML = '<tr><td colspan="12" class="text-center"><div class="spinner"></div><div style="margin-top: 10px;">Loading devices...</div></td></tr>';
     }
+
+    // Backup data lama: kalau auto-refresh gagal (timeout), tabel nggak dikosongin
+    const previousDevices = allDevices;
 
     // Progressive loading: Load devices in chunks
     allDevices = [];
@@ -81,58 +93,20 @@ async function loadDevices(isAutoRefresh = false) {
             updateSearchPlaceholder('onu');
         }
 
-        // Re-apply current filter and sorting
-        if (currentFilterType === 'onu') {
-            // Show ALL devices from GenieACS (no filtering by product_class)
-            let devicesToRender = allDevices;
-
-            // Re-apply search filter if active
-            const searchTerm = document.getElementById('search-input')?.value.toLowerCase().trim() || '';
-            if (searchTerm !== '') {
-                // Reset to page 1 when search is active during auto-refresh
-                // This ensures all search results are visible
-                if (isAutoRefresh) {
-                    currentPage = 1;
-                }
-
-                devicesToRender = allDevices.filter(device => {
-                    const serialNumber = (device.serial_number || '').toLowerCase();
-                    const macAddress = (device.mac_address || '').toLowerCase();
-
-                    // Search in tags array
-                    let tagsMatch = false;
-                    if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
-                        tagsMatch = device.tags.some(tag => tag.toLowerCase().includes(searchTerm));
-                    }
-
-                    return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || tagsMatch;
-                });
-
-                // Debug: Log search results during auto-refresh
-                if (isAutoRefresh && devicesToRender.length > 0) {
-                    console.log(`[AUTO-REFRESH] Found ${devicesToRender.length} device(s) matching "${searchTerm}"`);
-                }
-            }
-
-            // Re-apply sorting if active
-            if (currentSortColumn) {
-                devicesToRender = applySorting(devicesToRender, currentSortColumn, currentSortDirection);
-            }
-
-            renderDevices(devicesToRender);
-            updateDeviceCount(devicesToRender.length, allDevices.length);
-            updateDeviceStats(allDevices);
-        } else {
-            // For infrastructure tabs, re-render map items
-            renderMapItems(currentFilterType);
-            updateDeviceStats([], false);
-        }
-
-        // Update tab counts using map data
+        // Update tab counts dulu (nulis total mentah)...
         if (mapCountsResult && mapCountsResult.success) {
             updateDeviceTypeCountsFromMap(allDevices, mapCountsResult.counts);
         } else {
             updateDeviceTypeCountsFromMap(allDevices, {});
+        }
+
+        // ...baru render dengan filter RB/status/search/sort, supaya badge terakhir
+        // ditulis oleh hasil filter
+        if (currentFilterType === 'onu') {
+            applyRbFilter(true);
+        } else {
+            renderMapItems(currentFilterType);
+            updateDeviceStats([], false);
         }
 
         // Restore scroll position and sort icons after auto-refresh
@@ -151,6 +125,13 @@ async function loadDevices(isAutoRefresh = false) {
             }
         }
     } catch (error) {
+        // Auto-refresh gagal (mis. timeout saat server sibuk): pakai data lama, jangan kosongin tabel
+        if (isAutoRefresh && previousDevices && previousDevices.length > 0) {
+            console.warn('Auto-refresh gagal, pakai data lama:', error.message);
+            allDevices = previousDevices;
+            return;
+        }
+
         console.error('Error loading devices:', error);
         tbody.innerHTML = '<tr><td colspan="12" class="text-center text-danger">Failed to load devices: ' + error.message + '</td></tr>';
         updateDeviceCount(0, 0);
@@ -159,6 +140,9 @@ async function loadDevices(isAutoRefresh = false) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// RENDER
+// ---------------------------------------------------------------------------
 async function renderDevices(devices) {
     const tbody = document.getElementById('devices-tbody');
     tbody.innerHTML = '';
@@ -174,6 +158,7 @@ async function renderDevices(devices) {
         }
         tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center">No devices found</td></tr>`;
         updatePaginationUI(0);
+        updateBulkActionButtons();
         return;
     }
 
@@ -186,7 +171,6 @@ async function renderDevices(devices) {
         const startIndex = (currentPage - 1) * itemsPerPage;
         const endIndex = startIndex + itemsPerPage;
         devicesToRender = devices.slice(startIndex, endIndex);
-
     }
 
     // Update pagination UI
@@ -226,6 +210,9 @@ async function renderDevices(devices) {
         });
     }
 
+    // Tabel bisa dirender ulang selagi menunggu batch API; bersihkan lagi biar nggak dobel baris
+    tbody.innerHTML = '';
+
     devicesToRender.forEach(device => {
         const row = document.createElement('tr');
         const ipAddress = extractIP(device.ip_tr069);
@@ -249,8 +236,7 @@ async function renderDevices(devices) {
             clientsBadge = `<span class="badge bg-secondary">0</span>`;
         }
 
-
-// RX Power badge with color based on signal strength
+        // RX Power badge with color based on signal strength
         const rxPower = parseFloat(device.rx_power);
         let rxBadgeClass = 'bg-secondary'; // Default
         let rxDisplay = 'N/A';
@@ -263,28 +249,28 @@ async function renderDevices(devices) {
             } else {
                 rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
             }
-        } 
+        }
         // 2. Logic 4 warna menggunakan tangga ke bawah (agar tidak ada celah desimal)
         else {
             if (rxPower > -13.00) {
                 // Lebih besar dari -13 (misal -12, -10) -> Merah
-                rxBadgeClass = 'bg-danger'; 
+                rxBadgeClass = 'bg-danger';
             } else if (rxPower > -15.00) {
-                // Tembus ke sini artinya pasti <= -13.00
                 // Dari -13.00 sampai -14.99 -> Kuning
                 rxBadgeClass = 'bg-warning text-dark';
             } else if (rxPower > -25.00) {
                 // Dari -15.00 sampai -24.99 -> Hijau
-                rxBadgeClass = 'bg-success';  
+                rxBadgeClass = 'bg-success';
             } else if (rxPower >= -28.00) {
                 // Dari -25.00 sampai -28.00 -> Kuning
                 rxBadgeClass = 'bg-warning text-dark';
             } else {
-                // Sisa angka di bawah -28.00 (misal -29, -30) -> Merah
+                // Di bawah -28.00 -> Merah
                 rxBadgeClass = 'bg-danger';
             }
             rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
         }
+
         // Map button - conditional based on registration status
         let mapButton;
         if (isInMap) {
@@ -355,6 +341,7 @@ async function renderDevices(devices) {
         tbody.appendChild(row);
     });
 
+    // Sinkronkan bar bulk-action dengan checkbox yang baru dirender
     updateBulkActionButtons();
 }
 
@@ -446,8 +433,6 @@ function updateDeviceCount(shown, total) {
     }
 }
 
-let currentStatusFilter = 'all'; // Variabel penyimpan status aktif
-
 function filterByStatus(status) {
     currentStatusFilter = status;
     applyRbFilter(); // Panggil fungsi master filter
@@ -477,15 +462,11 @@ function updateDeviceStats(devices, showStats = true) {
     `;
 }
 
-// Update device type counts in tab badges using map data
+// Update badge ONU di tab (mengikuti filter RB yang sedang dipilih)
 function updateDeviceTypeCountsFromMap(devices, mapCounts) {
-    // Count ALL devices from GenieACS (no filtering by product_class)
-    const onuCount = devices.length;
-
-
     const onuBadge = document.getElementById('count-onu');
     if (onuBadge) {
-        onuBadge.textContent = onuCount;
+        onuBadge.textContent = getRbFilteredDevices().length;
     }
 }
 
@@ -569,11 +550,8 @@ function filterByType(type) {
     resetSortIcons();
 
     if (type === 'onu') {
-        // For ONU: show ALL devices from GenieACS (no filtering by product_class)
-        renderDevices(allDevices);
-        updateDeviceCount(allDevices.length, allDevices.length);
-        // Show stats for ONU tab
-        updateDeviceStats(allDevices, true);
+        // ONU: lewat master filter supaya filter RB/status tetap kepakai
+        applyRbFilter();
     } else {
         // For ODP, ODC, OLT, Server: show map items
         renderMapItems(type);
@@ -608,7 +586,7 @@ function clearSearch() {
     filterDevices();
 }
 
-// Apply sorting to devices array (helper function for auto-refresh)
+// Apply sorting to devices array
 function applySorting(devices, column, direction) {
     const sortedDevices = [...devices];
 
@@ -653,7 +631,7 @@ function applySorting(devices, column, direction) {
                 break;
             case 'tags':
                 // Sort by tags: join array to string, empty array goes to bottom
-                valueA = (a.tags && Array.isArray(a.tags) && a.tags.length > 0) ? a.tags.join(', ').toLowerCase() : 'zzz'; // 'zzz' puts empty tags at bottom
+                valueA = (a.tags && Array.isArray(a.tags) && a.tags.length > 0) ? a.tags.join(', ').toLowerCase() : 'zzz';
                 valueB = (b.tags && Array.isArray(b.tags) && b.tags.length > 0) ? b.tags.join(', ').toLowerCase() : 'zzz';
                 break;
             default:
@@ -670,7 +648,7 @@ function applySorting(devices, column, direction) {
     return sortedDevices;
 }
 
-// Sorting functionality
+// Sorting functionality (filter RB/status/search + sorting ditangani applyRbFilter)
 function sortTable(column) {
     // Toggle sort direction if clicking same column
     if (currentSortColumn === column) {
@@ -680,25 +658,7 @@ function sortTable(column) {
         currentSortDirection = 'asc';
     }
 
-    // Get current filtered devices (in case search is active)
-    const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
-    let devicesToSort = searchTerm === '' ? [...allDevices] : allDevices.filter(device => {
-        const serialNumber = (device.serial_number || '').toLowerCase();
-        const macAddress = (device.mac_address || '').toLowerCase();
-
-        // Search in tags array
-        let tagsMatch = false;
-        if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
-            tagsMatch = device.tags.some(tag => tag.toLowerCase().includes(searchTerm));
-        }
-
-        return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || tagsMatch;
-    });
-
-    // Use helper function to sort
-    devicesToSort = applySorting(devicesToSort, column, currentSortDirection);
-
-    renderDevices(devicesToSort);
+    applyRbFilter(true);
     updateSortIcons(column, currentSortDirection);
 }
 
@@ -736,8 +696,10 @@ function resetSortIcons() {
     });
 }
 
+// ---------------------------------------------------------------------------
+// SINGLE SUMMON
+// ---------------------------------------------------------------------------
 // currentSummonDeviceId defined in devices-state.js
-
 
 function summonDeviceQuick(deviceId) {
     currentSummonDeviceId = deviceId;
@@ -775,13 +737,15 @@ async function confirmSummon() {
     if (result && result.success) {
         showToast('Device summon berhasil!', 'success');
     } else {
-        showToast(result.message || 'Gagal summon device', 'danger');
+        showToast(result?.message || 'Gagal summon device', 'danger');
     }
 
     currentSummonDeviceId = null;
 }
 
-// Pagination functions
+// ---------------------------------------------------------------------------
+// PAGINATION
+// ---------------------------------------------------------------------------
 function updatePaginationUI(total) {
     const paginationContainer = document.getElementById('pagination-container');
     const paginationInfo = document.getElementById('pagination-info');
@@ -835,8 +799,11 @@ function goToPage(page) {
 
     currentPage = page;
 
-    // Re-render devices with new page
-    filterByType(currentFilterType);
+    if (currentFilterType === 'onu') {
+        applyRbFilter(true);
+    } else {
+        filterByType(currentFilterType);
+    }
 
     // Scroll to top of table
     document.getElementById('devices-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -849,8 +816,11 @@ function changeItemsPerPage() {
     // Reset to page 1 when changing items per page
     currentPage = 1;
 
-    // Re-render devices
-    filterByType(currentFilterType);
+    if (currentFilterType === 'onu') {
+        applyRbFilter(true);
+    } else {
+        filterByType(currentFilterType);
+    }
 }
 
 // Toggle Tags column visibility
@@ -879,7 +849,9 @@ function toggleTagsColumn() {
     }
 }
 
-// Bulk operations - Checkbox functions
+// ---------------------------------------------------------------------------
+// BULK SELECTION
+// ---------------------------------------------------------------------------
 function toggleSelectAll() {
     const selectAllCheckbox = document.getElementById('select-all-checkbox');
     const deviceCheckboxes = document.querySelectorAll('.device-checkbox');
@@ -896,11 +868,13 @@ function updateBulkActionButtons() {
     const bulkActionButtons = document.getElementById('bulk-action-buttons');
     const selectedCount = document.getElementById('selected-count');
 
-    if (selectedCheckboxes.length > 0) {
-        bulkActionButtons.style.display = 'inline-block';
-        selectedCount.textContent = `${selectedCheckboxes.length} selected`;
-    } else {
-        bulkActionButtons.style.display = 'none';
+    if (bulkActionButtons) {
+        if (selectedCheckboxes.length > 0) {
+            bulkActionButtons.style.display = 'inline-block';
+            if (selectedCount) selectedCount.textContent = `${selectedCheckboxes.length} selected`;
+        } else {
+            bulkActionButtons.style.display = 'none';
+        }
     }
 
     // Update select-all checkbox state
@@ -916,18 +890,23 @@ function getSelectedDeviceIds() {
     return Array.from(selectedCheckboxes).map(cb => decodeURIComponent(cb.value));
 }
 
+// Kosongkan semua pilihan + sembunyikan bar Add Tag/Untag/Summon/Delete
 function resetSelection() {
-    document.querySelectorAll('.device-checkbox:checked').forEach(cb => cb.checked = false);
+    document.querySelectorAll('.device-checkbox').forEach(cb => cb.checked = false);
 
     const selectAll = document.getElementById('select-all-checkbox');
     if (selectAll) selectAll.checked = false;
 
-    if (typeof selectedDevices !== 'undefined' && selectedDevices.clear) selectedDevices.clear();
+    if (typeof selectedDevices !== 'undefined' && selectedDevices && selectedDevices.clear) {
+        selectedDevices.clear();
+    }
 
-    updateBulkActionButtons(); // ini yang nyembunyiin bar Add Tag/Untag/Summon/Delete
+    updateBulkActionButtons();
 }
 
-// Bulk Add Tag
+// ---------------------------------------------------------------------------
+// BULK ADD TAG
+// ---------------------------------------------------------------------------
 function showBulkAddTagModal() {
     const selectedIds = getSelectedDeviceIds();
     document.getElementById('add-tag-count').textContent = selectedIds.length;
@@ -981,11 +960,8 @@ async function confirmBulkAddTag() {
             showToast(`Warning: ${result.fail_count} device(s) failed`, 'warning');
         }
 
+        resetSelection();
         loadDevices(); // Reload devices to show updated tags
-
-        // Clear selections
-        document.querySelectorAll('.device-checkbox:checked').forEach(cb => cb.checked = false);
-        updateBulkActionButtons();
     } else {
         console.error('Add tag failed:', result);
         if (result && result.debug) {
@@ -995,7 +971,9 @@ async function confirmBulkAddTag() {
     }
 }
 
-// Bulk Untag
+// ---------------------------------------------------------------------------
+// BULK UNTAG
+// ---------------------------------------------------------------------------
 function showBulkUntagModal() {
     const selectedIds = getSelectedDeviceIds();
     document.getElementById('untag-count').textContent = selectedIds.length;
@@ -1058,11 +1036,8 @@ async function confirmBulkUntag() {
             showToast(`Warning: ${result.fail_count} device(s) failed`, 'warning');
         }
 
-                loadDevices(); // Reload devices to show updated tags
-
-        // Clear selections
-        document.querySelectorAll('.device-checkbox:checked').forEach(cb => cb.checked = false);
-        updateBulkActionButtons();
+        resetSelection();
+        loadDevices(); // Reload devices to show updated tags
     } else {
         console.error('Untag failed:', result);
         if (result && result.debug) {
@@ -1072,7 +1047,9 @@ async function confirmBulkUntag() {
     }
 }
 
-// Bulk Delete
+// ---------------------------------------------------------------------------
+// BULK DELETE
+// ---------------------------------------------------------------------------
 function showBulkDeleteModal() {
     const selectedIds = getSelectedDeviceIds();
     document.getElementById('delete-count').textContent = selectedIds.length;
@@ -1103,23 +1080,22 @@ async function confirmBulkDelete() {
 
     if (result && result.success) {
         showToast(`${selectedIds.length} device(s) deleted successfully`, 'success');
-                loadDevices(); // Reload devices
-
-        // Clear selections
-        document.querySelectorAll('.device-checkbox:checked').forEach(cb => cb.checked = false);
-        updateBulkActionButtons();
+        resetSelection();
+        loadDevices(); // Reload devices
     } else {
         showToast(result?.message || 'Failed to delete devices', 'error');
     }
 }
 
+// ---------------------------------------------------------------------------
+// INIT & AUTO-REFRESH
+// ---------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', function() {
-    
-        if (window.GENIEACS_CONFIGURED) loadDevices(); // Initial load (manual)
 
-        // Start auto-refresh timer
-        if (window.GENIEACS_CONFIGURED) autoRefreshTimer = setInterval(() => loadDevices(true), 60000); // Auto-refresh every 60 seconds
-    
+    if (window.GENIEACS_CONFIGURED) loadDevices(); // Initial load (manual)
+
+    // Start auto-refresh timer
+    if (window.GENIEACS_CONFIGURED) autoRefreshTimer = setInterval(() => loadDevices(true), 60000); // Auto-refresh every 60 seconds
 
     // Keyboard shortcuts for pagination (Left/Right arrow keys)
     document.addEventListener('keydown', function(e) {
@@ -1156,46 +1132,44 @@ document.addEventListener('visibilitychange', function() {
         }
     } else {
         // Page is visible again, restart auto-refresh
-        
         if (!autoRefreshTimer) {
             if (window.GENIEACS_CONFIGURED) autoRefreshTimer = setInterval(() => loadDevices(true), 60000);
         }
-
     }
 });
 
-function applyRbFilter() {
+// ---------------------------------------------------------------------------
+// MASTER FILTER (RB + Status + Search + Sort + Pagination)
+// ---------------------------------------------------------------------------
+function getRbFilteredDevices() {
     const rbElement = document.getElementById('rbFilter');
     const rbFilter = rbElement ? rbElement.value.toLowerCase() : 'all';
-    
-    currentPage = 1; // Reset halaman ke 1
-    
-    // 1. FILTER BERDASARKAN RB DULU
-    let rbFilteredDevices = allDevices;
-    if (rbFilter !== 'all') {
-        rbFilteredDevices = allDevices.filter(device => {
-            const ipString = extractIP(device.ip_tr069);
-            if (rbFilter === '56c') return ipString.startsWith('10.123.'); 
-            if (rbFilter === 'klaling') return ipString.startsWith('10.124.'); 
-            if (rbFilter === 'sosok') return ipString.startsWith('10.125.'); 
-            return false;
-        });
-    }
-    
-    // Update Angka Badge berdasarkan RB yang dipilih (sebelum dipotong status)
+    if (rbFilter === 'all') return allDevices;
+
+    const prefixMap = { '56c': '10.123.', 'klaling': '10.124.', 'sosok': '10.125.' };
+    const prefix = prefixMap[rbFilter];
+    if (!prefix) return [];
+
+    return allDevices.filter(d => extractIP(d.ip_tr069).startsWith(prefix));
+}
+
+function applyRbFilter(keepPage = false) {
+    if (!keepPage) currentPage = 1;
+
+    // 1. Filter RB
+    const rbFilteredDevices = getRbFilteredDevices();
+
+    // Badge TOTAL/ONLINE/OFFLINE ikut RB yang dipilih (sebelum dipotong status)
     updateDeviceStats(rbFilteredDevices, true);
-    
+
     let devicesToRender = rbFilteredDevices;
-    
-    // 2. FILTER BERDASARKAN STATUS (TOTAL / ONLINE / OFFLINE)
+
+    // 2. Filter status
     if (currentStatusFilter !== 'all') {
-        devicesToRender = devicesToRender.filter(device => {
-            const status = device.status || 'offline';
-            return status === currentStatusFilter;
-        });
+        devicesToRender = devicesToRender.filter(device => (device.status || 'offline') === currentStatusFilter);
     }
-    
-    // 3. FILTER KOTAK SEARCH
+
+    // 3. Filter search
     const searchInput = document.getElementById('search-input');
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
     if (searchTerm !== '') {
@@ -1209,19 +1183,29 @@ function applyRbFilter() {
             return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || tagsMatch;
         });
     }
-    
-    // 4. RENDER KE TABEL
+
+    // 4. Sorting (kalau sedang aktif)
+    if (currentSortColumn) {
+        devicesToRender = applySorting(devicesToRender, currentSortColumn, currentSortDirection);
+    }
+
+    // 5. Jaga-jaga halaman melebihi jumlah halaman yang ada
+    if (itemsPerPage > 0) {
+        const maxPage = Math.max(1, Math.ceil(devicesToRender.length / itemsPerPage));
+        if (currentPage > maxPage) currentPage = maxPage;
+    }
+
+    // 6. Render
     renderDevices(devicesToRender);
     updateDeviceCount(devicesToRender.length, allDevices.length);
-    
+
     const onuBadge = document.getElementById('count-onu');
-    if (onuBadge) {
-        onuBadge.textContent = devicesToRender.length;
-    }
+    if (onuBadge) onuBadge.textContent = devicesToRender.length;
 }
 
-// Auto-Tagging berdasarkan Segmen IP
-// Auto-Tagging berdasarkan Segmen IP
+// ---------------------------------------------------------------------------
+// AUTO-TAGGING berdasarkan segmen IP
+// ---------------------------------------------------------------------------
 async function syncRbTags() {
     if (!allDevices || allDevices.length === 0) {
         showToast('Tidak ada data device untuk disinkronisasi', 'warning');
@@ -1258,7 +1242,7 @@ async function syncRbTags() {
 
     // Hitung total device yang butuh di-tag
     const totalToSync = rbMapping['RB_56c'].ids.length + rbMapping['RB_Klaling'].ids.length + rbMapping['RB_Sosok'].ids.length;
-    
+
     if (totalToSync === 0) {
         showToast('Semua device sudah memiliki Tag RB. Tidak ada yang perlu disinkronisasi.', 'info');
         return;
@@ -1280,16 +1264,16 @@ async function syncRbTags() {
                     body: JSON.stringify({
                         action: 'add',
                         device_ids: data.ids,
-                        tag: tagName // Mengirim teks '56c', 'Klaling', atau 'Sosok'
+                        tag: tagName
                     })
                 });
             }
         }
-        
+
         hideLoading();
         showToast(`Berhasil menempelkan tag pada ${totalToSync} device!`, 'success');
         loadDevices(); // Muat ulang tabel agar badge birunya langsung muncul
-        
+
     } catch (error) {
         hideLoading();
         console.error('Error saat sync tags:', error);
@@ -1297,6 +1281,9 @@ async function syncRbTags() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// BULK SUMMON (Smart Queuing di backend + chunking 5 device di frontend)
+// ---------------------------------------------------------------------------
 async function summonSelectedDevices() {
     // Pakai helper yang sama dengan Tag/Delete (value checkbox sudah di-decode)
     const deviceIds = getSelectedDeviceIds().filter(id => id && id.trim() !== '');
@@ -1310,15 +1297,21 @@ async function summonSelectedDevices() {
         return;
     }
 
+    bulkBusy = true; // pause auto-refresh selama proses
+    const btn = document.getElementById('btn-bulk-summon');
+    const btnOriginal = btn ? btn.innerHTML : '';
     showLoading();
 
-    const chunkSize = 5; // JANGAN dinaikin, ini hasil tuning anti-504 Nginx
+    const chunkSize = 5;   // JANGAN dinaikin, ini hasil tuning anti-504 Nginx
+    const pauseMs = 1500;  // jeda antar chunk supaya GenieACS nggak dibanjirin
     let successTotal = 0;
     let failTotal = 0;
 
     try {
         for (let i = 0; i < deviceIds.length; i += chunkSize) {
             const chunk = deviceIds.slice(i, i + chunkSize);
+
+            if (btn) btn.textContent = `Summon ${Math.min(i + chunkSize, deviceIds.length)}/${deviceIds.length}`;
 
             const result = await fetchAPI('/api/summon-multiple.php', {
                 method: 'POST',
@@ -1331,15 +1324,23 @@ async function summonSelectedDevices() {
             } else {
                 failTotal += chunk.length;
             }
+
+            await new Promise(r => setTimeout(r, pauseMs));
         }
 
-        showToast(`Proses selesai! Summon terkirim ke ${successTotal} device${failTotal ? `, gagal ${failTotal}` : ''}. Data klien akan muncul sesaat lagi.`, failTotal ? 'warning' : 'success');
-        loadDevices();
+        showToast(
+            `Summon terkirim ke ${successTotal} device${failTotal ? `, gagal ${failTotal}` : ''}. Data klien akan muncul bertahap.`,
+            failTotal ? 'warning' : 'success'
+        );
     } catch (error) {
-        console.error("Error saat summon massal:", error);
+        console.error('Error saat summon massal:', error);
         showToast('Terjadi kesalahan sistem di tengah proses summon.', 'danger');
     } finally {
         hideLoading();
-        resetSelection(); // selalu reset, sukses maupun error
+        if (btn) btn.innerHTML = btnOriginal;
+        resetSelection();   // selalu reset, sukses maupun error
+        bulkBusy = false;
+        // Kasih napas ke server dulu sebelum refresh data
+        setTimeout(() => loadDevices(true), 20000);
     }
 }
