@@ -354,6 +354,8 @@ async function renderDevices(devices) {
         `;
         tbody.appendChild(row);
     });
+
+    updateBulkActionButtons();
 }
 
 // Render map items (for infrastructure: Server, OLT, ODC, ODP)
@@ -914,6 +916,17 @@ function getSelectedDeviceIds() {
     return Array.from(selectedCheckboxes).map(cb => decodeURIComponent(cb.value));
 }
 
+function resetSelection() {
+    document.querySelectorAll('.device-checkbox:checked').forEach(cb => cb.checked = false);
+
+    const selectAll = document.getElementById('select-all-checkbox');
+    if (selectAll) selectAll.checked = false;
+
+    if (typeof selectedDevices !== 'undefined' && selectedDevices.clear) selectedDevices.clear();
+
+    updateBulkActionButtons(); // ini yang nyembunyiin bar Add Tag/Untag/Summon/Delete
+}
+
 // Bulk Add Tag
 function showBulkAddTagModal() {
     const selectedIds = getSelectedDeviceIds();
@@ -1285,48 +1298,28 @@ async function syncRbTags() {
 }
 
 async function summonSelectedDevices() {
-    let deviceIds = [];
-    
-    // Ambil ID dari variabel global atau checkbox
-    if (typeof selectedDevices !== 'undefined' && selectedDevices.size > 0) {
-        deviceIds = Array.from(selectedDevices);
-    } else {
-        const checkedBoxes = document.querySelectorAll('tbody input[type="checkbox"]:checked');
-        if (checkedBoxes.length > 0) {
-            deviceIds = Array.from(checkedBoxes).map(cb => {
-                return cb.value || cb.getAttribute('data-id') || cb.getAttribute('data-device-id');
-            });
-        }
-    }
-
-    // Filter array dari nilai kosong
-    deviceIds = deviceIds.filter(id => id && id.trim() !== '' && id !== 'on');
+    // Pakai helper yang sama dengan Tag/Delete (value checkbox sudah di-decode)
+    const deviceIds = getSelectedDeviceIds().filter(id => id && id.trim() !== '');
 
     if (deviceIds.length === 0) {
         showToast('Pilih setidaknya satu device di tabel untuk disummon!', 'warning');
         return;
     }
 
-    if (!confirm(`Yakin ingin melakukan Summon massal pada ${deviceIds.length} device? Sistem akan memproses secara bertahap (5 device per sesi) agar server tidak RTO.`)) {
+    if (!confirm(`Yakin ingin melakukan Summon massal pada ${deviceIds.length} device?`)) {
         return;
     }
 
-    showLoading(); 
-    
-    // VARIABEL CHUNKING (CICILAN)
-    const chunkSize = 5; // Eksekusi 5 device sekaligus per request API
+    showLoading();
+
+    const chunkSize = 5; // JANGAN dinaikin, ini hasil tuning anti-504 Nginx
     let successTotal = 0;
     let failTotal = 0;
 
     try {
-        // Looping untuk mengirim data dengan cara dicicil
         for (let i = 0; i < deviceIds.length; i += chunkSize) {
             const chunk = deviceIds.slice(i, i + chunkSize);
-            
-            // Opsional: Tampilkan progress di console browser
-            console.log(`Memproses batch ${Math.floor(i/chunkSize) + 1} (Device ${i + 1} - ${i + chunk.length} dari ${deviceIds.length})...`);
-            
-            // Tembak API per 5 device
+
             const result = await fetchAPI('/api/summon-multiple.php', {
                 method: 'POST',
                 body: JSON.stringify({ device_ids: chunk })
@@ -1340,14 +1333,13 @@ async function summonSelectedDevices() {
             }
         }
 
-        hideLoading();
-        showToast(`Proses selesai! Berhasil: ${successTotal} device. Gagal/RTO: ${failTotal} device.`, 'success');
-        
-        loadDevices(); // Refresh tabel
-
+        showToast(`Proses selesai! Summon terkirim ke ${successTotal} device${failTotal ? `, gagal ${failTotal}` : ''}. Data klien akan muncul sesaat lagi.`, failTotal ? 'warning' : 'success');
+        loadDevices();
     } catch (error) {
-        hideLoading();
         console.error("Error saat summon massal:", error);
         showToast('Terjadi kesalahan sistem di tengah proses summon.', 'danger');
+    } finally {
+        hideLoading();
+        resetSelection(); // selalu reset, sukses maupun error
     }
 }

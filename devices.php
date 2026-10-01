@@ -168,7 +168,7 @@ include __DIR__ . '/views/layouts/header.php';
     // Global configuration
     window.GENIEACS_CONFIGURED = <?php echo $genieacsConfigured ? 'true' : 'false'; ?>;
 </script>
-<script src="/assets/js/devices/devices-state.js"></script>
-<script src="/assets/js/devices.js"></script>
+<script src="/assets/js/devices/devices-state.js?v=<?php echo filemtime(__DIR__ . '/assets/js/devices/devices-state.js'); ?>"></script>
+<script src="/assets/js/devices.js?v=<?php echo filemtime(__DIR__ . '/assets/js/devices.js'); ?>"></script>
 
 <?php include __DIR__ . '/views/layouts/footer.php'; ?>

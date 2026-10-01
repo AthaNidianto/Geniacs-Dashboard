@@ -43,18 +43,19 @@ set_time_limit(300);
 $successCount = 0;
 $failCount = 0;
 
+$successCount = 0;
+$failCount = 0;
+
 foreach ($deviceIds as $deviceId) {
-    // Gunakan fungsi summon yang sudah kita modifikasi dengan fitur TR-098 & TR-181 sebelumnya
-    $res = $genieacs->summonAndFetchAdminCredentials($deviceId);
+    // Gunakan fungsi Fast Bulk Summon (ngebut tanpa nunggu)
+    $res = $genieacs->bulkSummonFast($deviceId);
     
     if ($res['success']) {
         $successCount++;
     } else {
         $failCount++;
     }
-    
-    // Jeda 50ms per device agar server GenieACS tidak nge-hang karena dibombardir ratusan request sekaligus
-    usleep(50000); 
+    // Tidak perlu usleep (jeda) lagi karena perintah dikirim ke antrean GenieACS dengan aman
 }
 
 jsonResponse([

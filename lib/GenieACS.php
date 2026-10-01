@@ -1041,4 +1041,37 @@ class GenieACS {
 
         return $data;
     }
+
+    /**
+     * Fast Bulk Summon (Fire and Forget)
+     * Tanpa timeout agar PHP tidak menunggu balasan modem (anti-RTO)
+     */
+/**
+     * Fast Bulk Summon (Smart Queuing)
+     * Mengantrekan task secara instan, dan hanya 1x trigger connection_request
+     */
+    public function bulkSummonFast($deviceId) {
+        $encodedId = rawurlencode($deviceId);
+
+        // JALUR INSTAN (Tanpa ?connection_request)
+        // GenieACS cuma nyatet antrean aja tanpa nungguin modemnya bales, jadi makan waktu 0 detik!
+        $endpointQueue = "/devices/{$encodedId}/tasks";
+        
+        $this->request($endpointQueue, 'POST', [
+            'name' => 'refreshObject', 'objectName' => 'VirtualParameters'
+        ]);
+        $this->request($endpointQueue, 'POST', [
+            'name' => 'refreshObject', 'objectName' => 'InternetGatewayDevice.LANDevice.1.Hosts'
+        ]);
+        
+        // JALUR ALARM / WAKE-UP (Pakai ?connection_request)
+        // Ditaruh di task paling akhir biar modemnya cuma digedor 1x aja
+        $endpointWakeUp = "/devices/{$encodedId}/tasks?connection_request";
+        
+        $this->request($endpointWakeUp, 'POST', [
+            'name' => 'refreshObject', 'objectName' => 'Device.Hosts'
+        ]);
+
+        return ['success' => true];
+    }
 }
