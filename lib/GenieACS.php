@@ -11,6 +11,27 @@ class GenieACS {
     private $password;
     private $baseUrl;
 
+    /**
+     * Field minimum untuk statistik dashboard (dashboard-stats.php, uplink-stats.php).
+     * JANGAN dipakai di get-devices.php: parser Fast butuh lebih banyak field (WAN, WiFi password, dll).
+     * Kalau ada grafik dashboard yang kosong/meleset, tambahkan path yang dibaca endpoint tsb ke sini.
+     */
+    private const LITE_PROJECTION = [
+        '_id', '_lastInform', '_deviceId', '_tags',
+        'VirtualParameters.RXPower',
+        'VirtualParameters.gettemp',
+        'VirtualParameters.Temperature',
+        'InternetGatewayDevice.DeviceInfo',
+        'InternetGatewayDevice.ManagementServer.ConnectionRequestURL',
+        'InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig',
+        'InternetGatewayDevice.WANDevice.1.X_HW_GponInterfaceConfig',
+        'InternetGatewayDevice.LANDevice.1.Hosts.HostNumberOfEntries',
+        'Device.DeviceInfo.UpTime',
+        'Device.ManagementServer.ConnectionRequestURL',
+        'Device.Optical.Interface.1.RxPower',
+        'Device.Hosts.HostNumberOfEntries',
+    ];
+
     public function __construct($host = null, $port = 7557, $username = null, $password = null) {
         $this->host = $host;
         $this->port = $port;
@@ -28,7 +49,7 @@ class GenieACS {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 300); // Increased to 300 seconds (5 minutes) for large datasets (400+ devices)
+        curl_setopt($ch, CURLOPT_TIMEOUT, 300); // Increased to 300 seconds (5 minutes) for large datasets
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30); // Connection timeout 30 seconds
 
         // Add authentication if provided
@@ -82,8 +103,10 @@ class GenieACS {
      * @param array $query - MongoDB query
      * @param int $limit - Maximum number of devices to return (0 = no limit)
      * @param int $skip - Number of devices to skip (for pagination)
+     * @param array|string|null $projection - Field yang diminta saja (array atau string dipisah koma).
+     *                                        Null = dokumen lengkap (perilaku lama).
      */
-    public function getDevices($query = [], $limit = 0, $skip = 0) {
+    public function getDevices($query = [], $limit = 0, $skip = 0, $projection = null) {
         $params = [];
 
         if (!empty($query)) {
@@ -98,8 +121,21 @@ class GenieACS {
             $params[] = 'skip=' . $skip;
         }
 
+        if ($projection) {
+            $fields = is_array($projection) ? implode(',', $projection) : $projection;
+            $params[] = 'projection=' . urlencode($fields);
+        }
+
         $queryString = !empty($params) ? '?' . implode('&', $params) : '';
         return $this->request('/devices/' . $queryString);
+    }
+
+    /**
+     * Versi ringan getDevices() untuk statistik dashboard.
+     * Hanya menarik field minimum (lihat LITE_PROJECTION) supaya hemat memori & cepat.
+     */
+    public function getDevicesLite($query = [], $limit = 0, $skip = 0) {
+        return $this->getDevices($query, $limit, $skip, self::LITE_PROJECTION);
     }
 
     /**
@@ -107,6 +143,8 @@ class GenieACS {
      */
     public function getDeviceCount($query = []) {
         $queryString = empty($query) ? '' : '?query=' . urlencode(json_encode($query));
+        // Cukup _id saja, kita hanya butuh jumlahnya
+        $queryString .= ($queryString === '' ? '?' : '&') . 'projection=_id';
         $result = $this->request('/devices/' . $queryString);
 
         if ($result['success'] && isset($result['data'])) {
@@ -210,48 +248,57 @@ class GenieACS {
     }
 
     /**
-     * Summon device and fetch admin credentials (VirtualParameters)
-     * This is a convenience method that:
-     * 1. Summons the device (connection request)
-     * 2. Refreshes all VirtualParameters so GenieACS evaluates superAdmin/superPassword
-     *
-     * VirtualParameters are computed by GenieACS from actual device parameters.
-     * Refreshing the VirtualParameters object triggers evaluation of ALL VirtualParameters,
-     * including superAdmin and superPassword which read admin credentials from various device parameters.
-     *
-     * @param string $deviceId Device ID
-     * @return array Response with success status
+     * Deteksi root data model dari data yang sudah tersimpan di GenieACS.
+     * Return 'tr098' (InternetGatewayDevice), 'tr181' (Device), atau null kalau belum ketahuan.
+     * Dipakai supaya task refresh tidak menunjuk path yang tidak ada di modem (fault 9005).
      */
-/**
-     * Summon device, fetch admin credentials AND Connected Clients
+    private function detectRoot($deviceId) {
+        $q = urlencode(json_encode(['_id' => $deviceId]));
+        $projection = urlencode('InternetGatewayDevice.DeviceInfo.ProductClass,Device.DeviceInfo.ProductClass');
+        $res = $this->request("/devices/?query={$q}&projection={$projection}");
+
+        if ($res['success'] && !empty($res['data'][0])) {
+            if (isset($res['data'][0]['InternetGatewayDevice'])) return 'tr098';
+            if (isset($res['data'][0]['Device'])) return 'tr181';
+        }
+        return null;
+    }
+
+    /**
+     * Summon device, fetch admin credentials, SSID (WLAN) AND Connected Clients (Single Summon)
+     *
+     * Task 1 menunggu hasil (timeout=3000) seperti sebelumnya. Task berikutnya disesuaikan
+     * dengan model data modem (TR-098 / TR-181).
      */
     public function summonAndFetchAdminCredentials($deviceId) {
         $encodedId = rawurlencode($deviceId);
-
-        // Task 1: Summon modem dan refresh VirtualParameters (buat admin password)
         $endpoint = "/devices/{$encodedId}/tasks?timeout=3000&connection_request";
-        $dataAdmin = [
+
+        // Task 1: Summon + VirtualParameters (admin password)
+        $result = $this->request($endpoint, 'POST', [
             'name' => 'refreshObject',
             'objectName' => 'VirtualParameters'
-        ];
-        
-        // Eksekusi Task 1
-        $result = $this->request($endpoint, 'POST', $dataAdmin);
-        
+        ]);
+
         if ($result['success']) {
-            // Task 2: Paksa modem lapor daftar Client/Host (Standar TR-098 / Mayoritas Modem)
-            $dataHostsTR098 = [
-                'name' => 'refreshObject',
-                'objectName' => 'InternetGatewayDevice.LANDevice.1.Hosts'
-            ];
-            $this->request($endpoint, 'POST', $dataHostsTR098);
-            
-            // Task 3: Paksa modem lapor daftar Client/Host (Standar TR-181 / Modem Baru)
-            $dataHostsTR181 = [
-                'name' => 'refreshObject',
-                'objectName' => 'Device.Hosts'
-            ];
-            $this->request($endpoint, 'POST', $dataHostsTR181);
+            $root = $this->detectRoot($deviceId);
+
+            $objects = [];
+            if ($root !== 'tr181') {
+                $objects[] = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'; // SSID
+                $objects[] = 'InternetGatewayDevice.LANDevice.1.Hosts';             // Client TR-098
+            }
+            if ($root !== 'tr098') {
+                $objects[] = 'Device.WiFi';   // SSID
+                $objects[] = 'Device.Hosts';  // Client TR-181
+            }
+
+            foreach ($objects as $objectName) {
+                $this->request($endpoint, 'POST', [
+                    'name' => 'refreshObject',
+                    'objectName' => $objectName
+                ]);
+            }
         }
 
         return $result;
@@ -357,9 +404,10 @@ class GenieACS {
 
     /**
      * Get device statistics
+     * Hanya butuh _lastInform per device, jadi pakai projection (hemat memori).
      */
     public function getDeviceStats() {
-        $devices = $this->getDevices();
+        $devices = $this->getDevices([], 0, 0, '_lastInform');
 
         if (!$devices['success']) {
             return ['success' => false, 'error' => 'Failed to fetch devices'];
@@ -472,6 +520,7 @@ class GenieACS {
 
         // Status
         $lastInform = isset($device['_lastInform']) ? $device['_lastInform'] : null;
+        $lastInformTimestamp = null;
 
         if ($lastInform) {
             $lastInformTimestamp = strtotime($lastInform);
@@ -1043,34 +1092,46 @@ class GenieACS {
     }
 
     /**
-     * Fast Bulk Summon (Fire and Forget)
-     * Tanpa timeout agar PHP tidak menunggu balasan modem (anti-RTO)
-     */
-/**
      * Fast Bulk Summon (Smart Queuing)
-     * Mengantrekan task secara instan, dan hanya 1x trigger connection_request
+     *
+     * Semua task masuk antrean tanpa ?connection_request (instan, GenieACS cuma mencatat).
+     * Hanya task TERAKHIR yang membawa ?connection_request sebagai "alarm" (wake-up call),
+     * jadi modem cuma digedor 1x untuk mengerjakan semua task.
+     *
+     * Task disesuaikan dengan data model modem (TR-098 / TR-181) supaya tidak ada task
+     * yang menunjuk path yang tidak ada (fault 9005 yang nyangkut di antrean).
+     * Cakupan: VirtualParameters (admin), WLAN (SSID), Hosts (Client).
      */
     public function bulkSummonFast($deviceId) {
         $encodedId = rawurlencode($deviceId);
+        $root = $this->detectRoot($deviceId);
 
-        // JALUR INSTAN (Tanpa ?connection_request)
-        // GenieACS cuma nyatet antrean aja tanpa nungguin modemnya bales, jadi makan waktu 0 detik!
-        $endpointQueue = "/devices/{$encodedId}/tasks";
-        
-        $this->request($endpointQueue, 'POST', [
-            'name' => 'refreshObject', 'objectName' => 'VirtualParameters'
-        ]);
-        $this->request($endpointQueue, 'POST', [
-            'name' => 'refreshObject', 'objectName' => 'InternetGatewayDevice.LANDevice.1.Hosts'
-        ]);
-        
-        // JALUR ALARM / WAKE-UP (Pakai ?connection_request)
-        // Ditaruh di task paling akhir biar modemnya cuma digedor 1x aja
-        $endpointWakeUp = "/devices/{$encodedId}/tasks?connection_request";
-        
-        $this->request($endpointWakeUp, 'POST', [
-            'name' => 'refreshObject', 'objectName' => 'Device.Hosts'
-        ]);
+        $queue  = "/devices/{$encodedId}/tasks";                     // instan, cuma nyatet antrean
+        $wakeUp = "/devices/{$encodedId}/tasks?connection_request";  // dipakai SEKALI, di task terakhir
+
+        $refresh = function ($endpoint, $objectName) {
+            return $this->request($endpoint, 'POST', [
+                'name' => 'refreshObject',
+                'objectName' => $objectName
+            ]);
+        };
+
+        // Selalu: kredensial admin
+        $refresh($queue, 'VirtualParameters');
+
+        if ($root === 'tr098') {
+            $refresh($queue,  'InternetGatewayDevice.LANDevice.1.WLANConfiguration'); // SSID
+            $refresh($wakeUp, 'InternetGatewayDevice.LANDevice.1.Hosts');             // client + alarm
+        } elseif ($root === 'tr181') {
+            $refresh($queue,  'Device.WiFi');                                         // SSID
+            $refresh($wakeUp, 'Device.Hosts');                                        // client + alarm
+        } else {
+            // Model belum ketahuan: kirim dua-duanya (perilaku lama)
+            $refresh($queue,  'InternetGatewayDevice.LANDevice.1.WLANConfiguration');
+            $refresh($queue,  'Device.WiFi');
+            $refresh($queue,  'InternetGatewayDevice.LANDevice.1.Hosts');
+            $refresh($wakeUp, 'Device.Hosts');
+        }
 
         return ['success' => true];
     }
