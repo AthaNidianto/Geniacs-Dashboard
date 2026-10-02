@@ -44,7 +44,7 @@ if ($stats['success']) {
     ];
 
     // Ambil data seluruh device untuk dihitung detailnya (dibatasi 5000 biar aman)
-    $devicesResult = $genieacs->getDevices([], 5000, 0);
+    $devicesResult = $genieacs->getDevicesLite([], 5000, 0);
 
     if ($devicesResult['success'] && isset($devicesResult['data'])) {
         foreach ($devicesResult['data'] as $device) {

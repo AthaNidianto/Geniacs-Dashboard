@@ -31,7 +31,7 @@ $genieacs = new GenieACS(
     $credentials['password']
 );
 
-$devicesResult = $genieacs->getDevices();
+$devicesResult = $genieacs->getDevicesLite();
 
 if (!$devicesResult['success']) {
     jsonResponse(['success' => false, 'message' => 'Gagal mengambil data devices']);
