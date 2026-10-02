@@ -1135,4 +1135,163 @@ class GenieACS {
 
         return ['success' => true];
     }
+
+    /**
+     * Summon massal PARALEL (server-side) untuk ratusan device sekaligus.
+     *
+     * Beda dengan bulkSummonFast() yang dipanggil per device:
+     * - Deteksi model (TR-098/TR-181) cukup 1x GET kecil untuk SEMUA device.
+     * - Semua POST task dikirim lewat curl_multi (default 40 koneksi paralel) dari 1 proses PHP,
+     *   jadi tidak menghabiskan worker PHP-FPM dan tidak bergantung ke browser.
+     * - Dua fase: (1) semua task masuk antrean tanpa ?connection_request (instan),
+     *   (2) task "alarm" terakhir tiap device dengan ?connection_request. Prinsip Smart Queuing
+     *   tetap: modem digedor 1x untuk mengerjakan semua task.
+     *
+     * @param array $deviceIds   Daftar device ID
+     * @param int   $concurrency Jumlah koneksi paralel ke NBI GenieACS
+     * @return array ['success','total','success_count','fail_count','tasks_ok','tasks_failed']
+     */
+    public function bulkSummonParallel(array $deviceIds, int $concurrency = 40) {
+        $deviceIds = array_values(array_unique(array_filter($deviceIds, 'strlen')));
+        $total = count($deviceIds);
+
+        if ($total === 0) {
+            return ['success' => true, 'total' => 0, 'success_count' => 0, 'fail_count' => 0,
+                    'tasks_ok' => 0, 'tasks_failed' => 0];
+        }
+
+        // 1) Satu GET kecil: root data model semua device (hanya ProductClass, ukurannya kecil)
+        $roots = [];
+        $projection = urlencode('InternetGatewayDevice.DeviceInfo.ProductClass,Device.DeviceInfo.ProductClass');
+        $res = $this->request("/devices/?projection={$projection}");
+        if ($res['success'] && is_array($res['data'])) {
+            foreach ($res['data'] as $d) {
+                if (!isset($d['_id'])) continue;
+                if (isset($d['InternetGatewayDevice'])) {
+                    $roots[$d['_id']] = 'tr098';
+                } elseif (isset($d['Device'])) {
+                    $roots[$d['_id']] = 'tr181';
+                }
+            }
+        }
+
+        // 2) Susun daftar job: [deviceId, objectName]
+        $queueJobs = [];
+        $wakeJobs  = [];
+        foreach ($deviceIds as $id) {
+            $root = $roots[$id] ?? null;
+
+            $queueJobs[] = [$id, 'VirtualParameters']; // admin credentials
+
+            if ($root === 'tr098') {
+                $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration']; // SSID
+                $wakeJobs[]  = [$id, 'InternetGatewayDevice.LANDevice.1.Hosts'];             // client + alarm
+            } elseif ($root === 'tr181') {
+                $queueJobs[] = [$id, 'Device.WiFi'];
+                $wakeJobs[]  = [$id, 'Device.Hosts'];
+            } else {
+                // Model belum ketahuan: kirim dua-duanya (perilaku lama)
+                $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'];
+                $queueJobs[] = [$id, 'Device.WiFi'];
+                $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.Hosts'];
+                $wakeJobs[]  = [$id, 'Device.Hosts'];
+            }
+        }
+
+        // 3) Fase 1: antrean (instan), Fase 2: alarm / wake-up
+        $failedDevices = [];
+        $okQueue = $this->postMulti($queueJobs, false, $concurrency, $failedDevices);
+        $okWake  = $this->postMulti($wakeJobs, true, $concurrency, $failedDevices);
+
+        $tasksTotal = count($queueJobs) + count($wakeJobs);
+        $tasksOk = $okQueue + $okWake;
+
+        return [
+            'success'       => true,
+            'total'         => $total,
+            'success_count' => $total - count($failedDevices),
+            'fail_count'    => count($failedDevices),
+            'tasks_ok'      => $tasksOk,
+            'tasks_failed'  => $tasksTotal - $tasksOk,
+        ];
+    }
+
+    /**
+     * Kirim banyak POST /tasks paralel dengan curl_multi.
+     *
+     * @param array $jobs           [[deviceId, objectName], ...]
+     * @param bool  $connectionReq  true = tambahkan ?connection_request (task alarm)
+     * @param int   $concurrency    Jumlah koneksi paralel
+     * @param array $failedDevices  (by reference) diisi deviceId yang ada task gagal
+     * @return int  Jumlah task yang sukses (HTTP 2xx)
+     */
+    private function postMulti(array $jobs, bool $connectionReq, int $concurrency, array &$failedDevices) {
+        $total = count($jobs);
+        if ($total === 0) return 0;
+
+        $mh = curl_multi_init();
+        $next = 0;
+        $inFlight = 0;
+        $ok = 0;
+        $meta = []; // spl_object_id(handle) => deviceId
+
+        $add = function () use (&$next, &$inFlight, &$meta, $total, $jobs, $mh, $connectionReq) {
+            if ($next >= $total) return false;
+            [$deviceId, $objectName] = $jobs[$next++];
+
+            $path = '/devices/' . rawurlencode($deviceId) . '/tasks' . ($connectionReq ? '?connection_request' : '');
+            $ch = curl_init($this->baseUrl . $path);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['name' => 'refreshObject', 'objectName' => $objectName]));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            if ($this->username && $this->password) {
+                curl_setopt($ch, CURLOPT_USERPWD, "{$this->username}:{$this->password}");
+            }
+
+            curl_multi_add_handle($mh, $ch);
+            $meta[spl_object_id($ch)] = $deviceId;
+            $inFlight++;
+            return true;
+        };
+
+        // Isi slot awal
+        for ($i = 0; $i < $concurrency; $i++) {
+            if (!$add()) break;
+        }
+
+        do {
+            curl_multi_exec($mh, $running);
+
+            while ($info = curl_multi_info_read($mh)) {
+                $ch = $info['handle'];
+                $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $deviceId = $meta[spl_object_id($ch)] ?? null;
+
+                if ($info['result'] === CURLE_OK && $code >= 200 && $code < 300) {
+                    $ok++;
+                } elseif ($deviceId !== null) {
+                    $failedDevices[$deviceId] = true;
+                }
+
+                unset($meta[spl_object_id($ch)]);
+                curl_multi_remove_handle($mh, $ch);
+                curl_close($ch);
+                $inFlight--;
+
+                $add(); // isi slot yang kosong dengan job berikutnya
+            }
+
+            if ($inFlight > 0) {
+                if (curl_multi_select($mh, 0.5) === -1) {
+                    usleep(1000);
+                }
+            }
+        } while ($inFlight > 0);
+
+        curl_multi_close($mh);
+        return $ok;
+    }
 }
