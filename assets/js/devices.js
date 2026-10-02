@@ -7,6 +7,22 @@
 // State tambahan (khusus file ini)
 let currentStatusFilter = 'all'; // Filter status aktif: all | online | offline
 let bulkBusy = false;            // true selama bulk action jalan (auto-refresh di-pause)
+let currentRxFilter = 'all';     // Filter redaman aktif: all | bagus | warning | kritis
+
+// Kelompok redaman (threshold sama dengan warna badge Rx di tabel):
+//  bagus   : -15.00 s/d -24.99 dBm (hijau)
+//  warning : -13.00 s/d -14.99 dan -25.00 s/d -28.00 dBm (kuning)
+//  kritis  : > -13.00 atau < -28.00 dBm (merah)
+// Device offline / tanpa nilai Rx valid tidak masuk kelompok mana pun.
+function getRxCategory(device) {
+    const rx = parseFloat(device.rx_power);
+    if (device.status !== 'online' || isNaN(rx) || rx === -999) return null;
+    if (rx > -13.00) return 'kritis';
+    if (rx > -15.00) return 'warning';
+    if (rx > -25.00) return 'bagus';
+    if (rx >= -28.00) return 'warning';
+    return 'kritis';
+}
 
 // ---------------------------------------------------------------------------
 // LOAD DATA
@@ -450,16 +466,43 @@ function updateDeviceStats(devices, showStats = true) {
     const online = devices.filter(d => d.status === 'online').length;
     const offline = total - online;
 
-    // Bikin efek redup untuk tombol yang tidak dipilih
-    const opTotal = currentStatusFilter === 'all' ? '1' : '0.4';
-    const opOnline = currentStatusFilter === 'online' ? '1' : '0.4';
-    const opOffline = currentStatusFilter === 'offline' ? '1' : '0.4';
+    // Hitung kelompok redaman (mengikuti RB yang dipilih)
+    const rx = { bagus: 0, warning: 0, kritis: 0 };
+    devices.forEach(d => {
+        const c = getRxCategory(d);
+        if (c) rx[c]++;
+    });
 
+    // Helper badge: yang aktif = penuh + ring warna, yang lain redup
+    const chip = (label, count, cls, color, active, dimmed, onclick, title) => {
+        const ring = active ? `box-shadow: 0 0 0 2px #fff, 0 0 0 4px ${color};` : '';
+        const op = dimmed ? '0.35' : '1';
+        return `<span class="badge ${cls} shadow-sm" title="${title}" onclick="${onclick}"
+            style="cursor:pointer; opacity:${op}; ${ring} transition:0.2s; padding:6px 10px; font-size:11px; white-space:nowrap;">${label} [${count}]</span>`;
+    };
+
+    const rxActive = currentRxFilter !== 'all';
+
+    // Grup 1: status. Grup 2: redaman. Tiap grup tidak pecah; kalau sempit, grup 2 turun utuh ke baris bawah.
+    statsContainer.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px;';
     statsContainer.innerHTML = `
-        <span class="badge bg-secondary shadow-sm" style="cursor: pointer; opacity: ${opTotal}; transition: 0.2s;" onclick="filterByStatus('all')">TOTAL [${total}]</span>
-        <span class="badge bg-success shadow-sm" style="cursor: pointer; opacity: ${opOnline}; transition: 0.2s;" onclick="filterByStatus('online')">ONLINE [${online}]</span>
-        <span class="badge bg-danger shadow-sm" style="cursor: pointer; opacity: ${opOffline}; transition: 0.2s;" onclick="filterByStatus('offline')">OFFLINE [${offline}]</span>
+        <div style="display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap;">
+            ${chip('TOTAL', total, 'bg-secondary', '#6c757d', currentStatusFilter === 'all', currentStatusFilter !== 'all', "filterByStatus('all')", 'Semua device')}
+            ${chip('ONLINE', online, 'bg-success', '#198754', currentStatusFilter === 'online', currentStatusFilter !== 'online', "filterByStatus('online')", 'Hanya online')}
+            ${chip('OFFLINE', offline, 'bg-danger', '#dc3545', currentStatusFilter === 'offline', currentStatusFilter !== 'offline', "filterByStatus('offline')", 'Hanya offline')}
+        </div>
+        <div style="display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap; border-left:2px solid #dee2e6; padding-left:18px;">
+            ${chip('BAGUS', rx.bagus, 'bg-success', '#198754', currentRxFilter === 'bagus', rxActive && currentRxFilter !== 'bagus', "filterByRx('bagus')", 'Redaman bagus: -15 s/d -25 dBm (klik lagi untuk reset)')}
+            ${chip('WARNING', rx.warning, 'bg-warning text-dark', '#ffc107', currentRxFilter === 'warning', rxActive && currentRxFilter !== 'warning', "filterByRx('warning')", 'Redaman warning: -13 s/d -15 atau -25 s/d -28 dBm (klik lagi untuk reset)')}
+            ${chip('KRITIS', rx.kritis, 'bg-danger', '#dc3545', currentRxFilter === 'kritis', rxActive && currentRxFilter !== 'kritis', "filterByRx('kritis')", 'Redaman kritis: lebih besar dari -13 atau lebih kecil dari -28 dBm (klik lagi untuk reset)')}
+        </div>
     `;
+}
+
+function filterByRx(category) {
+    // Klik badge yang sama lagi = matikan filter
+    currentRxFilter = (currentRxFilter === category) ? 'all' : category;
+    applyRbFilter();
 }
 
 // Update badge ONU di tab (mengikuti filter RB yang sedang dipilih)
@@ -1167,6 +1210,11 @@ function applyRbFilter(keepPage = false) {
     // 2. Filter status
     if (currentStatusFilter !== 'all') {
         devicesToRender = devicesToRender.filter(device => (device.status || 'offline') === currentStatusFilter);
+    }
+
+    // 2b. Filter redaman
+    if (currentRxFilter !== 'all') {
+        devicesToRender = devicesToRender.filter(device => getRxCategory(device) === currentRxFilter);
     }
 
     // 3. Filter search
