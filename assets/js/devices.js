@@ -473,28 +473,29 @@ function updateDeviceStats(devices, showStats = true) {
         if (c) rx[c]++;
     });
 
-    // Helper badge: yang aktif = penuh + ring warna, yang lain redup
+    // Helper badge: semua ukuran sama (rapi/simetris). Aktif = penuh + ring warna, tidak aktif = redup
     const chip = (label, count, cls, color, active, dimmed, onclick, title) => {
         const ring = active ? `box-shadow: 0 0 0 2px #fff, 0 0 0 4px ${color};` : '';
-        const op = dimmed ? '0.35' : '1';
-        return `<span class="badge ${cls} shadow-sm" title="${title}" onclick="${onclick}"
-            style="cursor:pointer; opacity:${op}; ${ring} transition:0.2s; padding:6px 10px; font-size:11px; white-space:nowrap;">${label} [${count}]</span>`;
+        const op = dimmed ? '0.4' : '1';
+        return `<span class="badge ${cls}" title="${title}" onclick="${onclick}"
+            style="display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box;
+                   width:108px; height:28px; padding:0 8px; font-family:inherit; font-size:11px; font-weight:600;
+                   line-height:1; letter-spacing:0.3px; white-space:nowrap; cursor:pointer;
+                   opacity:${op}; ${ring} transition:0.2s;">${label} [${count}]</span>`;
     };
 
-    const rxActive = currentRxFilter !== 'all';
-
     // Grup 1: status. Grup 2: redaman. Tiap grup tidak pecah; kalau sempit, grup 2 turun utuh ke baris bawah.
-    statsContainer.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px;';
+    statsContainer.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px;';
     statsContainer.innerHTML = `
-        <div style="display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap;">
+        <div style="display:inline-flex; align-items:center; gap:10px; flex-wrap:nowrap;">
             ${chip('TOTAL', total, 'bg-secondary', '#6c757d', currentStatusFilter === 'all', currentStatusFilter !== 'all', "filterByStatus('all')", 'Semua device')}
             ${chip('ONLINE', online, 'bg-success', '#198754', currentStatusFilter === 'online', currentStatusFilter !== 'online', "filterByStatus('online')", 'Hanya online')}
             ${chip('OFFLINE', offline, 'bg-danger', '#dc3545', currentStatusFilter === 'offline', currentStatusFilter !== 'offline', "filterByStatus('offline')", 'Hanya offline')}
         </div>
-        <div style="display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap; border-left:2px solid #dee2e6; padding-left:18px;">
-            ${chip('BAGUS', rx.bagus, 'bg-success', '#198754', currentRxFilter === 'bagus', rxActive && currentRxFilter !== 'bagus', "filterByRx('bagus')", 'Redaman bagus: -15 s/d -25 dBm (klik lagi untuk reset)')}
-            ${chip('WARNING', rx.warning, 'bg-warning text-dark', '#ffc107', currentRxFilter === 'warning', rxActive && currentRxFilter !== 'warning', "filterByRx('warning')", 'Redaman warning: -13 s/d -15 atau -25 s/d -28 dBm (klik lagi untuk reset)')}
-            ${chip('KRITIS', rx.kritis, 'bg-danger', '#dc3545', currentRxFilter === 'kritis', rxActive && currentRxFilter !== 'kritis', "filterByRx('kritis')", 'Redaman kritis: lebih besar dari -13 atau lebih kecil dari -28 dBm (klik lagi untuk reset)')}
+        <div style="display:inline-flex; align-items:center; gap:10px; flex-wrap:nowrap; border-left:2px solid #dee2e6; padding-left:18px;">
+            ${chip('BAGUS', rx.bagus, 'bg-success', '#198754', currentRxFilter === 'bagus', currentRxFilter !== 'bagus', "filterByRx('bagus')", 'Redaman bagus: -15 s/d -25 dBm (klik lagi untuk reset)')}
+            ${chip('WARNING', rx.warning, 'bg-warning text-dark', '#ffc107', currentRxFilter === 'warning', currentRxFilter !== 'warning', "filterByRx('warning')", 'Redaman warning: -13 s/d -15 atau -25 s/d -28 dBm (klik lagi untuk reset)')}
+            ${chip('KRITIS', rx.kritis, 'bg-danger', '#dc3545', currentRxFilter === 'kritis', currentRxFilter !== 'kritis', "filterByRx('kritis')", 'Redaman kritis: lebih besar dari -13 atau lebih kecil dari -28 dBm (klik lagi untuk reset)')}
         </div>
     `;
 }
