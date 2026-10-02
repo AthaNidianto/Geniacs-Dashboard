@@ -1,1297 +1,1348 @@
-<?php
-namespace App;
-
 /**
- * GenieACS API Client
+ * devices.js
+ * Main JavaScript for devices page
+ * Global state variables are defined in devices-state.js
  */
-class GenieACS {
-    private $host;
-    private $port;
-    private $username;
-    private $password;
-    private $baseUrl;
 
-    /**
-     * Field minimum untuk statistik dashboard (dashboard-stats.php, uplink-stats.php).
-     * JANGAN dipakai di get-devices.php: parser Fast butuh lebih banyak field (WAN, WiFi password, dll).
-     * Kalau ada grafik dashboard yang kosong/meleset, tambahkan path yang dibaca endpoint tsb ke sini.
-     */
-    private const LITE_PROJECTION = [
-        '_id', '_lastInform', '_deviceId', '_tags',
-        'VirtualParameters.RXPower',
-        'VirtualParameters.gettemp',
-        'VirtualParameters.Temperature',
-        'InternetGatewayDevice.DeviceInfo',
-        'InternetGatewayDevice.ManagementServer.ConnectionRequestURL',
-        'InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig',
-        'InternetGatewayDevice.WANDevice.1.X_HW_GponInterfaceConfig',
-        'InternetGatewayDevice.LANDevice.1.Hosts.HostNumberOfEntries',
-        'Device.DeviceInfo.UpTime',
-        'Device.ManagementServer.ConnectionRequestURL',
-        'Device.Optical.Interface.1.RxPower',
-        'Device.Hosts.HostNumberOfEntries',
-    ];
+// State tambahan (khusus file ini)
+let currentStatusFilter = 'all'; // Filter status aktif: all | online | offline
+let bulkBusy = false;            // true selama bulk action jalan (auto-refresh di-pause)
 
-    public function __construct($host = null, $port = 7557, $username = null, $password = null) {
-        $this->host = $host;
-        $this->port = $port;
-        $this->username = $username;
-        $this->password = $password;
-        $this->baseUrl = "http://{$this->host}:{$this->port}";
+// ---------------------------------------------------------------------------
+// LOAD DATA
+// ---------------------------------------------------------------------------
+async function loadDevices(isAutoRefresh = false) {
+    // Pause auto-refresh selama bulk action (supaya server nggak dobel beban)
+    if (isAutoRefresh && bulkBusy) return;
+
+    // Save scroll position before refresh (for auto-refresh)
+    if (isAutoRefresh) {
+        savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
     }
 
-    /**
-     * Make HTTP request to GenieACS API
-     */
-    private function request($endpoint, $method = 'GET', $data = null) {
-        $url = $this->baseUrl . $endpoint;
+    const tbody = document.getElementById('devices-tbody');
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 300); // Increased to 300 seconds (5 minutes) for large datasets
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30); // Connection timeout 30 seconds
-
-        // Add authentication if provided
-        if ($this->username && $this->password) {
-            curl_setopt($ch, CURLOPT_USERPWD, "{$this->username}:{$this->password}");
-        }
-
-        // Set method and data
-        if ($method === 'POST') {
-            curl_setopt($ch, CURLOPT_POST, true);
-            if ($data) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            }
-        } elseif ($method === 'PUT') {
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-            if ($data) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            }
-        } elseif ($method === 'DELETE') {
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
-        }
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($error) {
-            return ['success' => false, 'error' => $error];
-        }
-
-        return [
-            'success' => $httpCode >= 200 && $httpCode < 300,
-            'data' => json_decode($response, true),
-            'http_code' => $httpCode
-        ];
+    // Don't show spinner on auto-refresh to avoid flickering
+    if (!isAutoRefresh) {
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center"><div class="spinner"></div><div style="margin-top: 10px;">Loading devices...</div></td></tr>';
     }
 
-    /**
-     * Test connection to GenieACS
-     */
-    public function testConnection() {
-        $result = $this->request('/devices?limit=1');
-        return $result['success'];
-    }
+    // Backup data lama: kalau auto-refresh gagal (timeout), tabel nggak dikosongin
+    const previousDevices = allDevices;
 
-    /**
-     * Get all devices
-     * @param array $query - MongoDB query
-     * @param int $limit - Maximum number of devices to return (0 = no limit)
-     * @param int $skip - Number of devices to skip (for pagination)
-     * @param array|string|null $projection - Field yang diminta saja (array atau string dipisah koma).
-     *                                        Null = dokumen lengkap (perilaku lama).
-     */
-    public function getDevices($query = [], $limit = 0, $skip = 0, $projection = null) {
-        $params = [];
+    // Progressive loading: Load devices in chunks
+    allDevices = [];
+    let skip = 0;
+    const chunkSize = 100;
+    let hasMore = true;
 
-        if (!empty($query)) {
-            $params[] = 'query=' . urlencode(json_encode($query));
-        }
-
-        if ($limit > 0) {
-            $params[] = 'limit=' . $limit;
-        }
-
-        if ($skip > 0) {
-            $params[] = 'skip=' . $skip;
-        }
-
-        if ($projection) {
-            $fields = is_array($projection) ? implode(',', $projection) : $projection;
-            $params[] = 'projection=' . urlencode($fields);
-        }
-
-        $queryString = !empty($params) ? '?' . implode('&', $params) : '';
-        return $this->request('/devices/' . $queryString);
-    }
-
-    /**
-     * Versi ringan getDevices() untuk statistik dashboard.
-     * Hanya menarik field minimum (lihat LITE_PROJECTION) supaya hemat memori & cepat.
-     */
-    public function getDevicesLite($query = [], $limit = 0, $skip = 0) {
-        return $this->getDevices($query, $limit, $skip, self::LITE_PROJECTION);
-    }
-
-    /**
-     * Get total device count
-     */
-    public function getDeviceCount($query = []) {
-        $queryString = empty($query) ? '' : '?query=' . urlencode(json_encode($query));
-        // Cukup _id saja, kita hanya butuh jumlahnya
-        $queryString .= ($queryString === '' ? '?' : '&') . 'projection=_id';
-        $result = $this->request('/devices/' . $queryString);
-
-        if ($result['success'] && isset($result['data'])) {
-            return ['success' => true, 'count' => count($result['data'])];
-        }
-
-        return ['success' => false, 'count' => 0];
-    }
-
-    /**
-     * Get device by ID
-     */
-    public function getDevice($deviceId) {
-        $query = ['_id' => $deviceId];
-        $result = $this->request('/devices/?query=' . urlencode(json_encode($query)));
-
-        if ($result['success'] && !empty($result['data'])) {
-            return ['success' => true, 'data' => $result['data'][0]];
-        }
-
-        return ['success' => false, 'error' => 'Device not found'];
-    }
-
-    /**
-     * Get device parameters
-     */
-    public function getDeviceParameters($deviceId) {
-        return $this->getDevice($deviceId);
-    }
-
-    /**
-     * Execute task on device
-     */
-    public function executeTask($deviceId, $taskName, $params = []) {
-        $endpoint = "/devices/{$deviceId}/tasks";
-        $data = [
-            'name' => $taskName
-        ];
-
-        if (!empty($params)) {
-            $data['parameterValues'] = $params;
-        }
-
-        return $this->request($endpoint, 'POST', $data);
-    }
-
-    /**
-     * Summon device (connection request)
-     */
-    public function summonDevice($deviceId) {
-        // URL encode device ID to handle special characters
-        $encodedId = rawurlencode($deviceId);
-        $endpoint = "/devices/{$encodedId}/tasks?connection_request";
-        return $this->request($endpoint, 'POST');
-    }
-
-    /**
-     * Refresh device inform (force device to connect to ACS)
-     */
-    public function refreshInform($deviceId) {
-        $encodedId = rawurlencode($deviceId);
-        $endpoint = "/devices/{$encodedId}/tasks?connection_request";
-        return $this->request($endpoint, 'POST');
-    }
-
-    /**
-     * Add refresh task for specific parameter
-     * This forces GenieACS to fetch the parameter value from device
-     */
-    public function addRefreshTask($deviceId, $parameterPath) {
-        $encodedId = rawurlencode($deviceId);
-        $endpoint = "/devices/{$encodedId}/tasks?timeout=3000&connection_request";
-
-        $data = [
-            'name' => 'refreshObject',
-            'objectName' => $parameterPath
-        ];
-
-        return $this->request($endpoint, 'POST', $data);
-    }
-
-    /**
-     * Get parameter values from device (force fetch from device)
-     * This creates a task to fetch specific parameters from the device
-     *
-     * @param string $deviceId Device ID
-     * @param array $parameterNames Array of parameter names to fetch
-     * @param int $timeout Timeout in milliseconds (default: 3000)
-     * @return array Response with task ID
-     */
-    public function getParameterValues($deviceId, $parameterNames, $timeout = 3000) {
-        $encodedId = rawurlencode($deviceId);
-        $endpoint = "/devices/{$encodedId}/tasks?timeout={$timeout}&connection_request";
-
-        $data = [
-            'name' => 'getParameterValues',
-            'parameterNames' => $parameterNames
-        ];
-
-        return $this->request($endpoint, 'POST', $data);
-    }
-
-    /**
-     * Deteksi root data model dari data yang sudah tersimpan di GenieACS.
-     * Return 'tr098' (InternetGatewayDevice), 'tr181' (Device), atau null kalau belum ketahuan.
-     * Dipakai supaya task refresh tidak menunjuk path yang tidak ada di modem (fault 9005).
-     */
-    private function detectRoot($deviceId) {
-        $q = urlencode(json_encode(['_id' => $deviceId]));
-        $projection = urlencode('InternetGatewayDevice.DeviceInfo.ProductClass,Device.DeviceInfo.ProductClass');
-        $res = $this->request("/devices/?query={$q}&projection={$projection}");
-
-        if ($res['success'] && !empty($res['data'][0])) {
-            if (isset($res['data'][0]['InternetGatewayDevice'])) return 'tr098';
-            if (isset($res['data'][0]['Device'])) return 'tr181';
-        }
-        return null;
-    }
-
-    /**
-     * Summon device, fetch admin credentials, SSID (WLAN) AND Connected Clients (Single Summon)
-     *
-     * Task 1 menunggu hasil (timeout=3000) seperti sebelumnya. Task berikutnya disesuaikan
-     * dengan model data modem (TR-098 / TR-181).
-     */
-    public function summonAndFetchAdminCredentials($deviceId) {
-        $encodedId = rawurlencode($deviceId);
-        $endpoint = "/devices/{$encodedId}/tasks?timeout=3000&connection_request";
-
-        // Task 1: Summon + VirtualParameters (admin password)
-        $result = $this->request($endpoint, 'POST', [
-            'name' => 'refreshObject',
-            'objectName' => 'VirtualParameters'
+    try {
+        // Load first chunk with map data in parallel
+        const [firstChunk, mapCountsResult, mapItemsResult] = await Promise.all([
+            fetchAPI(`/api/get-devices.php?limit=${chunkSize}&skip=${skip}`),
+            fetchAPI('/api/get-map-counts.php'),
+            fetchAPI('/api/map-get-items.php')
         ]);
 
-        if ($result['success']) {
-            $root = $this->detectRoot($deviceId);
+        if (!firstChunk || !firstChunk.success) {
+            throw new Error(firstChunk?.message || 'Failed to load devices');
+        }
 
-            $objects = [];
-            if ($root !== 'tr181') {
-                $objects[] = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'; // SSID
-                $objects[] = 'InternetGatewayDevice.LANDevice.1.Hosts';             // Client TR-098
-            }
-            if ($root !== 'tr098') {
-                $objects[] = 'Device.WiFi';   // SSID
-                $objects[] = 'Device.Hosts';  // Client TR-181
-            }
+        allDevices = firstChunk.devices || [];
+        hasMore = firstChunk.hasMore;
+        skip += chunkSize;
 
-            foreach ($objects as $objectName) {
-                $this->request($endpoint, 'POST', [
-                    'name' => 'refreshObject',
-                    'objectName' => $objectName
-                ]);
+        // Update UI with first chunk immediately
+        if (!isAutoRefresh) {
+            tbody.innerHTML = '<tr><td colspan="12" class="text-center"><div class="spinner"></div><div style="margin-top: 10px;">Loading devices... (' + allDevices.length + ' loaded)</div></td></tr>';
+        }
+
+        // Load remaining chunks
+        while (hasMore) {
+            const chunk = await fetchAPI(`/api/get-devices.php?limit=${chunkSize}&skip=${skip}`);
+
+            if (!chunk || !chunk.success) break;
+
+            allDevices = allDevices.concat(chunk.devices || []);
+            hasMore = chunk.hasMore;
+            skip += chunkSize;
+
+            // Update loading indicator
+            if (!isAutoRefresh) {
+                tbody.innerHTML = '<tr><td colspan="12" class="text-center"><div class="spinner"></div><div style="margin-top: 10px;">Loading devices... (' + allDevices.length + ' loaded)</div></td></tr>';
             }
         }
 
-        return $result;
-    }
-
-    /**
-     * Reboot device
-     */
-    public function rebootDevice($deviceId) {
-        return $this->executeTask($deviceId, 'reboot');
-    }
-
-    /**
-     * Set parameter values on device
-     *
-     * @param string $deviceId Device ID
-     * @param array $parameters Array of parameters to set [['path', 'value', 'type'], ...]
-     * @param int $timeout Timeout in milliseconds (default: 3000)
-     * @return array Response with success status
-     *
-     * Example:
-     * $parameters = [
-     *     ['InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID', 'NewSSID', 'xsd:string'],
-     *     ['InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.KeyPassphrase', 'NewPassword', 'xsd:string']
-     * ];
-     */
-    public function setParameterValues($deviceId, $parameters, $timeout = 3000) {
-        // URL encode device ID to handle special characters
-        $encodedId = rawurlencode($deviceId);
-        $endpoint = "/devices/{$encodedId}/tasks?timeout={$timeout}&connection_request";
-
-        $data = [
-            'name' => 'setParameterValues',
-            'parameterValues' => $parameters
-        ];
-
-        return $this->request($endpoint, 'POST', $data);
-    }
-
-    /**
-     * Set WiFi configuration (SSID, Password, and Security Mode)
-     *
-     * @param string $deviceId Device ID
-     * @param string $ssid New WiFi SSID
-     * @param string $password New WiFi Password (optional for Open network)
-     * @param int $wlanIndex WLAN Configuration index (default: 1)
-     * @param string $securityMode Security mode (WPA2PSK, WPAPSK, WPA2PSKWPAPSK, None)
-     * @return array Response with success status
-     */
-    public function setWiFiConfig($deviceId, $ssid, $password = '', $wlanIndex = 1, $securityMode = 'WPA2PSK') {
-        $parameters = [];
-
-        // Try multiple parameter paths for different ONU vendors
-        $ssidPaths = [
-            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}.SSID",
-            "Device.WiFi.SSID.{$wlanIndex}.SSID"
-        ];
-
-        $securityPaths = [
-            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}.BeaconType",
-            "Device.WiFi.AccessPoint.{$wlanIndex}.Security.ModeEnabled"
-        ];
-
-        $passwordPaths = [
-            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}.KeyPassphrase",
-            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}.PreSharedKey.1.KeyPassphrase",
-            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}.PreSharedKey.1.PreSharedKey",
-            "Device.WiFi.AccessPoint.{$wlanIndex}.Security.KeyPassphrase"
-        ];
-
-        // For now, use the most common TR-098 paths
-        // 1. Set SSID
-        $parameters[] = [$ssidPaths[0], $ssid, 'xsd:string'];
-
-        // 2. Set Security Mode (BeaconType)
-        // Map security mode to BeaconType values
-        $beaconTypeMap = [
-            'WPA2PSK' => '11i',
-            'WPAPSK' => 'WPA',
-            'WPA2PSKWPAPSK' => 'WPAand11i',
-            'None' => 'Basic'  // or 'None' depending on device
-        ];
-
-        $beaconType = isset($beaconTypeMap[$securityMode]) ? $beaconTypeMap[$securityMode] : '11i';
-        $parameters[] = [$securityPaths[0], $beaconType, 'xsd:string'];
-
-        // 3. Set Password (only if security mode is not Open)
-        if ($securityMode !== 'None' && !empty($password)) {
-            $parameters[] = [$passwordPaths[0], $password, 'xsd:string'];
-
-            // Also set authentication mode for WPA/WPA2
-            $authModePath = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}.WPAAuthenticationMode";
-            $parameters[] = [$authModePath, 'PSKAuthentication', 'xsd:string'];
-
-            // Set encryption method
-            $encryptionPath = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}.WPAEncryptionModes";
-            $encryptionMode = ($securityMode === 'WPA2PSK' || $securityMode === 'WPA2PSKWPAPSK') ? 'AESEncryption' : 'TKIPEncryption';
-            $parameters[] = [$encryptionPath, $encryptionMode, 'xsd:string'];
+        // Process loaded devices
+        if (allDevices.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="12" class="text-center">No devices found</td></tr>';
+            updateDeviceCount(0, 0);
+            return;
         }
 
-        return $this->setParameterValues($deviceId, $parameters);
-    }
+        // Only reset sort state on manual refresh, maintain on auto-refresh
+        if (!isAutoRefresh) {
+            currentSortColumn = null;
+            currentSortDirection = 'asc';
+            resetSortIcons();
 
-    /**
-     * Get device statistics
-     * Hanya butuh _lastInform per device, jadi pakai projection (hemat memori).
-     */
-    public function getDeviceStats() {
-        $devices = $this->getDevices([], 0, 0, '_lastInform');
+            // Generate initial table header for "ONU" tab (default)
+            generateTableHeader('onu');
 
-        if (!$devices['success']) {
-            return ['success' => false, 'error' => 'Failed to fetch devices'];
+            // Update search placeholder for ONU tab (default)
+            updateSearchPlaceholder('onu');
         }
 
-        $total = count($devices['data']);
-        $online = 0;
-        $offline = 0;
+        // Update tab counts dulu (nulis total mentah)...
+        if (mapCountsResult && mapCountsResult.success) {
+            updateDeviceTypeCountsFromMap(allDevices, mapCountsResult.counts);
+        } else {
+            updateDeviceTypeCountsFromMap(allDevices, {});
+        }
 
-        foreach ($devices['data'] as $device) {
-            // Check last inform time (within last 5 minutes = online)
-            $lastInform = isset($device['_lastInform']) ? $device['_lastInform'] : null;
+        // ...baru render dengan filter RB/status/search/sort, supaya badge terakhir
+        // ditulis oleh hasil filter
+        if (currentFilterType === 'onu') {
+            applyRbFilter(true);
+        } else {
+            renderMapItems(currentFilterType);
+            updateDeviceStats([], false);
+        }
 
-            $isOnline = false;
-
-            if ($lastInform) {
-                // Convert ISO 8601 to Unix timestamp
-                $lastInformTimestamp = strtotime($lastInform);
-                if ($lastInformTimestamp !== false) {
-                    // Online if last inform within 5 minutes
-                    $isOnline = (time() - $lastInformTimestamp) < 300;
-                }
+        // Restore scroll position and sort icons after auto-refresh
+        if (isAutoRefresh) {
+            if (savedScrollPosition > 0) {
+                setTimeout(() => {
+                    window.scrollTo(0, savedScrollPosition);
+                }, 100); // Small delay to ensure DOM is updated
             }
 
-            if ($isOnline) {
-                $online++;
+            // Restore sort icons if sorting is active
+            if (currentSortColumn) {
+                setTimeout(() => {
+                    updateSortIcons(currentSortColumn, currentSortDirection);
+                }, 50);
+            }
+        }
+    } catch (error) {
+        // Auto-refresh gagal (mis. timeout saat server sibuk): pakai data lama, jangan kosongin tabel
+        if (isAutoRefresh && previousDevices && previousDevices.length > 0) {
+            console.warn('Auto-refresh gagal, pakai data lama:', error.message);
+            allDevices = previousDevices;
+            return;
+        }
+
+        console.error('Error loading devices:', error);
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-danger">Failed to load devices: ' + error.message + '</td></tr>';
+        updateDeviceCount(0, 0);
+        updateDeviceStats([]);
+        updateDeviceTypeCountsFromMap([], {}); // Reset counts
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RENDER
+// ---------------------------------------------------------------------------
+async function renderDevices(devices) {
+    const tbody = document.getElementById('devices-tbody');
+    tbody.innerHTML = '';
+
+    // Determine appropriate colspan based on current filter type
+    const colspan = (currentFilterType === 'onu') ? 12 : 6;
+
+    if (devices.length === 0) {
+        // If showing infrastructure items, show map items instead
+        if (currentFilterType !== 'onu') {
+            renderMapItems(currentFilterType);
+            return;
+        }
+        tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center">No devices found</td></tr>`;
+        updatePaginationUI(0);
+        updateBulkActionButtons();
+        return;
+    }
+
+    // Store total for pagination
+    totalDevices = devices.length;
+
+    // Apply pagination (slice devices array)
+    let devicesToRender = devices;
+    if (itemsPerPage > 0) {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        devicesToRender = devices.slice(startIndex, endIndex);
+    }
+
+    // Update pagination UI
+    updatePaginationUI(totalDevices);
+
+    // Fetch map status for all devices on current page using BATCH API
+    const serialNumbers = devicesToRender.map(device => device.serial_number);
+
+    let mapStatusMap = {};
+
+    try {
+        const batchResult = await fetchAPI('/api/get-onu-location-batch.php', {
+            method: 'POST',
+            body: JSON.stringify({ serial_numbers: serialNumbers })
+        });
+
+        if (batchResult && batchResult.success && batchResult.locations) {
+            // Convert batch result to map status format
+            Object.keys(batchResult.locations).forEach(serial => {
+                const location = batchResult.locations[serial];
+                mapStatusMap[serial] = {
+                    inMap: location.found || false,
+                    itemType: location.item_type || 'onu',
+                    itemId: location.onu?.id || location.server?.id || null
+                };
+            });
+        }
+    } catch (error) {
+        console.error('Batch map status fetch failed:', error);
+        // Fallback: all devices marked as not in map
+        devicesToRender.forEach(device => {
+            mapStatusMap[device.serial_number] = {
+                inMap: false,
+                itemType: 'onu',
+                itemId: null
+            };
+        });
+    }
+
+    // Tabel bisa dirender ulang selagi menunggu batch API; bersihkan lagi biar nggak dobel baris
+    tbody.innerHTML = '';
+
+    devicesToRender.forEach(device => {
+        const row = document.createElement('tr');
+        const ipAddress = extractIP(device.ip_tr069);
+        const mapInfo = mapStatusMap[device.serial_number] || { inMap: false, itemType: 'onu', itemId: null };
+        const isInMap = mapInfo.inMap;
+
+        // Create clickable IP link if IP is valid
+        let ipDisplay;
+        if (ipAddress !== 'N/A' && ipAddress !== '') {
+            ipDisplay = `<a href="http://${ipAddress}" target="_blank" rel="noopener noreferrer" title="Open ${ipAddress} in new tab">${ipAddress}</a>`;
+        } else {
+            ipDisplay = ipAddress;
+        }
+
+        // Connected clients count with badge
+        const clientsCount = device.connected_devices_count || 0;
+        let clientsBadge = '';
+        if (clientsCount > 0) {
+            clientsBadge = `<span class="badge bg-primary">${clientsCount}</span>`;
+        } else {
+            clientsBadge = `<span class="badge bg-secondary">0</span>`;
+        }
+
+        // RX Power badge with color based on signal strength
+        const rxPower = parseFloat(device.rx_power);
+        let rxBadgeClass = 'bg-secondary'; // Default
+        let rxDisplay = 'N/A';
+
+        // 1. Paksa abu-abu kalau device offline atau nilai error (-999)
+        if (device.status !== 'online' || isNaN(rxPower) || rxPower === -999) {
+            rxBadgeClass = 'bg-secondary';
+            if (!isNaN(rxPower) && rxPower !== -999) {
+                rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
             } else {
-                $offline++;
+                rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
             }
         }
-
-        return [
-            'success' => true,
-            'data' => [
-                'total' => $total,
-                'online' => $online,
-                'offline' => $offline
-            ]
-        ];
-    }
-
-    /**
-     * Parse device data for display
-     */
-    public function parseDeviceData($device) {
-        $data = [];
-
-        // Helper function to get nested parameter value
-        $getParam = function($path) use ($device) {
-            $keys = explode('.', $path);
-            $value = $device;
-
-            foreach ($keys as $key) {
-                if (isset($value[$key])) {
-                    $value = $value[$key];
-                } else {
-                    return null;
-                }
-            }
-
-            // GenieACS uses object format with _value field
-            if (is_array($value) && isset($value['_value'])) {
-                return $value['_value'];
-            }
-
-            // Fallback for direct values
-            return is_array($value) ? null : $value;
-        };
-
-        // Basic info
-        $data['device_id'] = $device['_id'] ?? 'N/A';
-        $data['serial_number'] = $getParam('_deviceId._SerialNumber') ?? $getParam('InternetGatewayDevice.DeviceInfo.SerialNumber') ?? 'N/A';
-
-        // MAC Address - try multiple paths
-        $macAddress = $getParam('InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress') ??
-                     $getParam('InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.MACAddress') ??
-                     $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.BSSID') ??
-                     $getParam('Device.Ethernet.Interface.1.MACAddress') ??
-                     $getParam('_deviceId._MACAddress');
-
-        // If MAC still not found, try to construct from OUI and serial number
-        if (empty($macAddress) || $macAddress === 'N/A') {
-            $oui = $getParam('_deviceId._OUI');
-            $serial = $getParam('_deviceId._SerialNumber');
-
-            // Some devices have MAC embedded in serial number (last 6 chars)
-            if ($oui && $serial && strlen($serial) >= 6) {
-                $lastSixChars = substr($serial, -6);
-                // Check if last 6 chars are hex
-                if (ctype_xdigit($lastSixChars)) {
-                    // Format OUI properly (F86CE1 -> F8:6C:E1)
-                    $ouiFormatted = strtoupper(substr($oui, 0, 2) . ':' .
-                                               substr($oui, 2, 2) . ':' .
-                                               substr($oui, 4, 2));
-
-                    $macAddress = $ouiFormatted . ':' .
-                                 strtoupper(substr($lastSixChars, 0, 2)) . ':' .
-                                 strtoupper(substr($lastSixChars, 2, 2)) . ':' .
-                                 strtoupper(substr($lastSixChars, 4, 2));
-                }
-            }
-        }
-
-        $data['mac_address'] = $macAddress ?? 'N/A';
-        $data['manufacturer'] = $getParam('_deviceId._Manufacturer') ?? $getParam('InternetGatewayDevice.DeviceInfo.Manufacturer') ?? 'N/A';
-        $data['oui'] = $getParam('_deviceId._OUI') ?? $getParam('InternetGatewayDevice.DeviceInfo.ManufacturerOUI') ?? 'N/A';
-        $data['product_class'] = $getParam('_deviceId._ProductClass') ?? $getParam('InternetGatewayDevice.DeviceInfo.ProductClass') ?? 'N/A';
-        $data['hardware_version'] = $getParam('InternetGatewayDevice.DeviceInfo.HardwareVersion') ?? 'N/A';
-        $data['software_version'] = $getParam('InternetGatewayDevice.DeviceInfo.SoftwareVersion') ?? 'N/A';
-
-        // Status
-        $lastInform = isset($device['_lastInform']) ? $device['_lastInform'] : null;
-        $lastInformTimestamp = null;
-
-        if ($lastInform) {
-            $lastInformTimestamp = strtotime($lastInform);
-            if ($lastInformTimestamp !== false) {
-                $data['last_inform'] = date('Y-m-d H:i:s', $lastInformTimestamp);
-                $data['status'] = (time() - $lastInformTimestamp) < 300 ? 'online' : 'offline';
+        // 2. Logic 4 warna menggunakan tangga ke bawah (agar tidak ada celah desimal)
+        else {
+            if (rxPower > -13.00) {
+                // Lebih besar dari -13 (misal -12, -10) -> Merah
+                rxBadgeClass = 'bg-danger';
+            } else if (rxPower > -15.00) {
+                // Dari -13.00 sampai -14.99 -> Kuning
+                rxBadgeClass = 'bg-warning text-dark';
+            } else if (rxPower > -25.00) {
+                // Dari -15.00 sampai -24.99 -> Hijau
+                rxBadgeClass = 'bg-success';
+            } else if (rxPower >= -28.00) {
+                // Dari -25.00 sampai -28.00 -> Kuning
+                rxBadgeClass = 'bg-warning text-dark';
             } else {
-                $data['last_inform'] = 'N/A';
-                $data['status'] = 'offline';
+                // Di bawah -28.00 -> Merah
+                rxBadgeClass = 'bg-danger';
             }
-        } else {
-            $data['last_inform'] = 'N/A';
-            $data['status'] = 'offline';
+            rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
         }
 
-        // Ping/Latency - try to get actual ping from VirtualParameters
-        // GenieACS stores ping result in VirtualParameters.Ping
-        $ping = $getParam('VirtualParameters.Ping') ??
-                $getParam('VirtualParameters.ping') ??
-                $getParam('VirtualParameters.PingResult');
-
-        if ($data['status'] === 'online') {
-            // If ping value exists and is numeric, use it
-            if ($ping !== null && is_numeric($ping)) {
-                $data['ping'] = intval($ping);
+        // Map button - conditional based on registration status
+        let mapButton;
+        if (isInMap) {
+            // Green button - opens map in new tab
+            let mapUrl;
+            if (mapInfo.itemType === 'mikrotik') {
+                // For MikroTik devices, focus on server
+                mapUrl = `/map.php?focus_type=server&focus_id=${mapInfo.itemId}`;
             } else {
-                // Fallback: estimate based on inform freshness if actual ping not available
-                if ($lastInformTimestamp) {
-                    $timeSinceInform = time() - $lastInformTimestamp;
-
-                    if ($timeSinceInform < 30) {
-                        $data['ping'] = rand(1, 5);
-                    } elseif ($timeSinceInform < 60) {
-                        $data['ping'] = rand(5, 15);
-                    } elseif ($timeSinceInform < 120) {
-                        $data['ping'] = rand(15, 50);
-                    } else {
-                        $data['ping'] = rand(50, 200);
-                    }
-                } else {
-                    $data['ping'] = null;
-                }
+                // For ONU devices, focus on ONU
+                mapUrl = `/map.php?focus_type=onu&focus_serial=${encodeURIComponent(device.serial_number)}`;
             }
+            mapButton = `<button class="btn btn-sm btn-success me-1" onclick="window.open('${mapUrl}', '_blank')" title="View on Map">
+                <i class="bi bi-map"></i>
+            </button>`;
         } else {
-            $data['ping'] = null;
+            // Gray button - shows alert
+            mapButton = `<button class="btn btn-sm btn-secondary me-1" onclick="showNotInMapAlert('${encodeURIComponent(device.serial_number)}')" title="Not Registered in Map">
+                <i class="bi bi-map"></i>
+            </button>`;
         }
 
-        // Network info
-        $connectionUrl = $getParam('InternetGatewayDevice.ManagementServer.ConnectionRequestURL') ??
-                        $getParam('Device.ManagementServer.ConnectionRequestURL') ?? 'N/A';
-
-        $data['ip_tr069'] = $connectionUrl;
-
-        // Extract IP address from ConnectionRequestURL
-        $ipAddress = 'N/A';
-        if ($connectionUrl && $connectionUrl !== 'N/A') {
-            // Extract IP from URL format: http://IP:PORT/path or https://IP:PORT/path
-            if (preg_match('/https?:\/\/([^:\/]+)/', $connectionUrl, $matches)) {
-                $ipAddress = $matches[1];
-            }
-        }
-
-        // Also try WAN IP if available
-        if ($ipAddress === 'N/A') {
-            $ipAddress = $getParam('InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress') ??
-                        $getParam('Device.IP.Interface.1.IPv4Address.1.IPAddress') ?? 'N/A';
-        }
-
-        $data['ip_address'] = $ipAddress;
-        $data['uptime'] = $getParam('InternetGatewayDevice.DeviceInfo.UpTime') ??
-                         $getParam('Device.DeviceInfo.UpTime') ?? 'N/A';
-
-        // WiFi info - try multiple paths and WLAN configurations
-        $wifiSsid = $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID') ??
-                   $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.SSID') ??
-                   $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.SSID') ??
-                   $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.SSID') ??
-                   $getParam('Device.WiFi.SSID.1.SSID') ??
-                   $getParam('Device.WiFi.SSID.2.SSID');
-
-        $data['wifi_ssid'] = $wifiSsid ?? 'N/A';
-
-        $wifiPassword = $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.PreSharedKey.1.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.KeyPassphrase') ??
-                       $getParam('Device.WiFi.AccessPoint.1.Security.KeyPassphrase') ??
-                       $getParam('Device.WiFi.AccessPoint.2.Security.KeyPassphrase');
-
-        $data['wifi_password'] = $wifiPassword ?? 'N/A';
-
-        // Optical info
-        $rxPower = $getParam('VirtualParameters.RXPower') ??
-                   $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.RXPower') ??
-                   $getParam('Device.Optical.Interface.1.RxPower');
-
-        // Convert raw value to dBm if needed
-        if ($rxPower !== null && is_numeric($rxPower)) {
-            $rxPower = floatval($rxPower);
-            if ($rxPower > 100) {
-                $rxPower = ($rxPower / 100) - 40;
-            }
-            $data['rx_power'] = number_format($rxPower, 2);
+        // Status badge with ping
+        let statusDisplay;
+        if (device.status === 'online') {
+            const ping = device.ping || '-';
+            statusDisplay = `<span class="badge online">ON [${ping}ms]</span>`;
         } else {
-            $data['rx_power'] = $rxPower ?? 'N/A';
+            statusDisplay = `<span class="badge offline">OFF [-]</span>`;
         }
 
-        // Temperature
-        $temperature = $getParam('VirtualParameters.gettemp') ??
-                      $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.TransceiverTemperature') ??
-                      $getParam('VirtualParameters.Temperature') ??
-                      $getParam('InternetGatewayDevice.DeviceInfo.Temperature');
-
-        // Convert raw value if needed (> 1000 indicates raw format)
-        if ($temperature !== null && is_numeric($temperature)) {
-            $temperature = floatval($temperature);
-            if ($temperature > 1000) {
-                $temperature = $temperature / 256; // Convert from raw to Celsius
-            }
-            $data['temperature'] = number_format($temperature, 1);
+        // Tags display - show as badges
+        let tagsDisplay = '';
+        let tagsSortValue = '';
+        if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
+            tagsDisplay = device.tags.map(tag => `<span class="badge bg-info me-1">${tag}</span>`).join('');
+            tagsSortValue = device.tags.join(', '); // For sorting: join tags as string
         } else {
-            $data['temperature'] = $temperature ?? 'N/A';
+            tagsDisplay = '<span class="text-muted">-</span>';
+            tagsSortValue = ''; // Empty for sorting (will be sorted to bottom)
         }
 
-        // WAN Details - try multiple connection types and device numbers
-        $wanDetails = [];
+        // Check tags column visibility state for consistent display
+        const tagsColumnDisplay = tagsColumnVisible ? '' : 'none';
 
-        // Helper function to check if WAN connection exists
-        $checkWANExists = function($path) use ($device) {
-            $keys = explode('.', $path);
-            $value = $device;
+        row.innerHTML = `
+            <td>
+                <input type="checkbox" class="device-checkbox" value="${encodeURIComponent(device.device_id)}" onchange="updateBulkActionButtons()">
+            </td>
+            <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>
+            <td>${device.mac_address}</td>
+            <td data-sort-value="${device.product_class || ''}">${device.product_class || 'N/A'}</td>
+            <td data-sort-value="${ipAddress}">${ipDisplay}</td>
+            <td data-sort-value="${device.wifi_ssid}">${device.wifi_ssid}</td>
+            <td data-sort-value="${device.pppoe_username || ''}">${device.pppoe_username || 'N/A'}</td>
+            <td data-sort-value="${parseFloat(device.rx_power) || -999}">${rxDisplay}</td>
+            <td data-sort-value="${parseFloat(device.temperature) || -999}">${device.temperature}°C</td>
+            <td data-sort-value="${clientsCount}" class="text-center">${clientsBadge}</td>
+            <td data-sort-value="${device.status}">${statusDisplay}</td>
+            <td class="tags-column" data-sort-value="${tagsSortValue}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
+            <td>
+                ${mapButton}
+                <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
+                    <i class="bi bi-lightning-charge"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
 
-            foreach ($keys as $key) {
-                if (isset($value[$key])) {
-                    $value = $value[$key];
-                } else {
-                    return false;
-                }
+    // Sinkronkan bar bulk-action dengan checkbox yang baru dirender
+    updateBulkActionButtons();
+}
+
+// Render map items (for infrastructure: Server, OLT, ODC, ODP)
+function renderMapItems(itemType) {
+    const tbody = document.getElementById('devices-tbody');
+    tbody.innerHTML = '';
+
+    let items = [];
+
+    if (itemType === 'olt') {
+        // OLT stored in Server properties, not as separate items
+        // Extract OLT info from Servers that have olt_link configured
+        allMapItems.forEach(item => {
+            if (item.item_type === 'server' && item.properties && item.properties.olt_link) {
+                items.push({
+                    id: item.id,
+                    name: item.properties.olt_link || 'OLT',
+                    item_type: 'olt',
+                    latitude: item.latitude,
+                    longitude: item.longitude,
+                    status: item.status,
+                    server_name: item.name
+                });
             }
-
-            // Check if this is an actual connection object (has _object or parameters)
-            if (is_array($value)) {
-                // If it has _object field and it's true, or has connection parameters
-                if (isset($value['_object']) || isset($value['ConnectionStatus']) ||
-                    isset($value['Enable']) || isset($value['Name'])) {
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        // Helper function to detect active WLAN/LAN interfaces
-        $detectActiveInterfaces = function() use ($getParam) {
-            $activeInterfaces = [];
-
-            // Check WLAN configurations (1-4)
-            for ($i = 1; $i <= 4; $i++) {
-                $wlanBase = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$i}";
-                $wlanEnable = $getParam("{$wlanBase}.Enable");
-                $wlanStatus = $getParam("{$wlanBase}.Status");
-                $wlanSSID = $getParam("{$wlanBase}.SSID");
-                $wlanVLAN = $getParam("{$wlanBase}.X_CT-COM_VLAN");
-
-                // WLAN is active if enabled and status is "Up" or has SSID
-                if (($wlanEnable === true || $wlanStatus === 'Up') && $wlanSSID) {
-                    $activeInterfaces[] = [
-                        'type' => 'WLAN',
-                        'number' => $i,
-                        'interface' => "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$i}",
-                        'ssid' => $wlanSSID,
-                        'vlan' => $wlanVLAN ?? 'N/A'
-                    ];
-                }
-            }
-
-            // Check LAN Ethernet configurations (1-4)
-            for ($i = 1; $i <= 4; $i++) {
-                $lanBase = "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{$i}";
-                $lanEnable = $getParam("{$lanBase}.Enable");
-                $lanStatus = $getParam("{$lanBase}.Status");
-                $lanVLAN = $getParam("{$lanBase}.X_CT-COM_VLAN");
-
-                // LAN is active if enabled or has status other than "NoLink"
-                if ($lanEnable === true || ($lanStatus && $lanStatus !== 'NoLink')) {
-                    $activeInterfaces[] = [
-                        'type' => 'LAN Ethernet',
-                        'number' => $i,
-                        'interface' => "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{$i}",
-                        'vlan' => $lanVLAN ?? 'N/A'
-                    ];
-                }
-            }
-
-            return $activeInterfaces;
-        };
-
-        // Try WANPPPConnection (most common for PPPoE)
-        for ($i = 1; $i <= 8; $i++) {
-            $basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$i}.WANPPPConnection.1";
-
-            // Check if this connection exists
-            if (!$checkWANExists($basePath)) {
-                continue;
-            }
-
-            $name = $getParam("{$basePath}.Name");
-            $externalIP = $getParam("{$basePath}.ExternalIPAddress");
-            $serviceList = $getParam("{$basePath}.X_CT-COM_ServiceList");
-            $connectionStatus = $getParam("{$basePath}.ConnectionStatus");
-            $lanInterface = $getParam("{$basePath}.X_CT-COM_LanInterface");
-
-            // If ConnectionStatus is not available, try to determine from Enable flag
-            if (!$connectionStatus || $connectionStatus === 'Unknown') {
-                $enabled = $getParam("{$basePath}.Enable");
-                if ($enabled !== null) {
-                    $connectionStatus = $enabled ? 'Connected' : 'Disconnected';
-                } else {
-                    $connectionStatus = 'Unknown';
-                }
-            }
-
-            // Parse LAN interface binding
-            $bindingInfo = 'N/A';
-            if ($lanInterface !== null && $lanInterface !== '') {
-                // Extract interface type and number
-                // e.g., "InternetGatewayDevice.LANDevice.1.WLANConfiguration.1" -> "WLAN 1"
-                // e.g., "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1" -> "LAN Ethernet 1"
-                if (preg_match('/WLANConfiguration\.(\d+)/', $lanInterface, $matches)) {
-                    $bindingInfo = "WLAN " . $matches[1];
-                } elseif (preg_match('/LANEthernetInterfaceConfig\.(\d+)/', $lanInterface, $matches)) {
-                    $bindingInfo = "LAN Ethernet " . $matches[1];
-                } elseif (preg_match('/LANHostConfigManagement/', $lanInterface)) {
-                    $bindingInfo = "All LAN Ports";
-                } else {
-                    $bindingInfo = $lanInterface;
-                }
-            }
-
-            // If binding info is still N/A, try to infer from active interfaces
-            if ($bindingInfo === 'N/A') {
-                $activeInterfaces = $detectActiveInterfaces();
-
-                if (!empty($activeInterfaces)) {
-                    $bindingList = [];
-                    foreach ($activeInterfaces as $iface) {
-                        if ($iface['type'] === 'WLAN') {
-                            $bindingList[] = "WLAN {$iface['number']}";
-                        }
-                    }
-
-                    if (!empty($bindingList)) {
-                        $bindingInfo = implode(', ', $bindingList);
-                    }
-                }
-            }
-
-            // Only add if we have at least a name, IP, or service identifier
-            if ($name || $externalIP || $serviceList) {
-                // Generate name if not available
-                if (!$name) {
-                    $name = $serviceList ? "WAN_{$serviceList}_{$i}" : "WAN_PPP_Connection_{$i}";
-                }
-
-                $wanDetails[] = [
-                    'type' => 'PPPoE',
-                    'name' => $name,
-                    'status' => $connectionStatus,
-                    'connection_type' => $getParam("{$basePath}.ConnectionType") ?? 'N/A',
-                    'external_ip' => $externalIP ?? 'N/A',
-                    'gateway' => $getParam("{$basePath}.RemoteIPAddress") ?? $getParam("{$basePath}.DefaultGateway") ?? 'N/A',
-                    'subnet_mask' => $getParam("{$basePath}.SubnetMask") ?? 'N/A',
-                    'dns_servers' => $getParam("{$basePath}.DNSServers") ?? 'N/A',
-                    'mac_address' => $getParam("{$basePath}.MACAddress") ?? 'N/A',
-                    'username' => $getParam("{$basePath}.Username") ?? 'N/A',
-                    'uptime' => $getParam("{$basePath}.Uptime") ?? 'N/A',
-                    'last_error' => $getParam("{$basePath}.LastConnectionError") ?? 'N/A',
-                    'mru_size' => $getParam("{$basePath}.MaxMRUSize") ?? 'N/A',
-                    'binding' => $bindingInfo,
-                ];
-            }
-        }
-
-        // Try WANIPConnection (for DHCP/Static IP)
-        for ($i = 1; $i <= 8; $i++) {
-            $basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$i}.WANIPConnection.1";
-
-            // Check if this connection exists
-            if (!$checkWANExists($basePath)) {
-                continue;
-            }
-
-            $name = $getParam("{$basePath}.Name");
-            $externalIP = $getParam("{$basePath}.ExternalIPAddress");
-            $serviceList = $getParam("{$basePath}.X_CT-COM_ServiceList");
-            $connectionStatus = $getParam("{$basePath}.ConnectionStatus");
-            $lanInterface = $getParam("{$basePath}.X_CT-COM_LanInterface");
-
-            // If ConnectionStatus is not available, try to determine from Enable flag
-            if (!$connectionStatus || $connectionStatus === 'Unknown') {
-                $enabled = $getParam("{$basePath}.Enable");
-                if ($enabled !== null) {
-                    $connectionStatus = $enabled ? 'Connected' : 'Disconnected';
-                } else {
-                    $connectionStatus = 'Unknown';
-                }
-            }
-
-            // Parse LAN interface binding
-            $bindingInfo = 'N/A';
-            if ($lanInterface !== null && $lanInterface !== '') {
-                if (preg_match('/WLANConfiguration\.(\d+)/', $lanInterface, $matches)) {
-                    $bindingInfo = "WLAN " . $matches[1];
-                } elseif (preg_match('/LANEthernetInterfaceConfig\.(\d+)/', $lanInterface, $matches)) {
-                    $bindingInfo = "LAN Ethernet " . $matches[1];
-                } elseif (preg_match('/LANHostConfigManagement/', $lanInterface)) {
-                    $bindingInfo = "All LAN Ports";
-                } else {
-                    $bindingInfo = $lanInterface;
-                }
-            }
-
-            // If binding info is still N/A, try to infer from active interfaces
-            if ($bindingInfo === 'N/A') {
-                $activeInterfaces = $detectActiveInterfaces();
-
-                if (!empty($activeInterfaces)) {
-                    $bindingList = [];
-                    foreach ($activeInterfaces as $iface) {
-                        if ($iface['type'] === 'WLAN') {
-                            $bindingList[] = "WLAN {$iface['number']}";
-                        }
-                    }
-
-                    if (!empty($bindingList)) {
-                        $bindingInfo = implode(', ', $bindingList);
-                    }
-                }
-            }
-
-            // Only add if we have at least a name, IP, or service identifier
-            if ($name || $externalIP || $serviceList) {
-                // Generate name if not available
-                if (!$name) {
-                    $name = $serviceList ? "WAN_{$serviceList}_{$i}" : "WAN_IP_Connection_{$i}";
-                }
-
-                $wanDetails[] = [
-                    'type' => 'IP',
-                    'name' => $name,
-                    'status' => $connectionStatus,
-                    'connection_type' => $getParam("{$basePath}.ConnectionType") ?? 'N/A',
-                    'external_ip' => $externalIP ?? 'N/A',
-                    'gateway' => $getParam("{$basePath}.DefaultGateway") ?? 'N/A',
-                    'subnet_mask' => $getParam("{$basePath}.SubnetMask") ?? 'N/A',
-                    'dns_servers' => $getParam("{$basePath}.DNSServers") ?? 'N/A',
-                    'mac_address' => $getParam("{$basePath}.MACAddress") ?? 'N/A',
-                    'addressing_type' => $getParam("{$basePath}.AddressingType") ?? 'N/A',
-                    'uptime' => $getParam("{$basePath}.Uptime") ?? 'N/A',
-                    'binding' => $bindingInfo,
-                    'username' => 'N/A', // IP connections don't have username
-                    'last_error' => 'N/A', // IP connections don't have last error
-                    'mru_size' => 'N/A', // IP connections don't have MRU size
-                ];
-            }
-        }
-
-        // If no WAN connections found, try to create virtual WAN details from active interfaces
-        if (empty($wanDetails)) {
-            $activeInterfaces = $detectActiveInterfaces();
-
-            if (!empty($activeInterfaces)) {
-                // Group interfaces by VLAN to create logical WAN connections
-                $vlanGroups = [];
-
-                foreach ($activeInterfaces as $iface) {
-                    $vlan = $iface['vlan'] !== 'N/A' && $iface['vlan'] !== '' ? $iface['vlan'] : 'default';
-
-                    if (!isset($vlanGroups[$vlan])) {
-                        $vlanGroups[$vlan] = [];
-                    }
-                    $vlanGroups[$vlan][] = $iface;
-                }
-
-                // Create WAN detail for each VLAN group
-                $connIndex = 1;
-                foreach ($vlanGroups as $vlan => $interfaces) {
-                    $bindingList = [];
-
-                    foreach ($interfaces as $iface) {
-                        if ($iface['type'] === 'WLAN') {
-                            $bindingList[] = "WLAN {$iface['number']} ({$iface['ssid']})";
-                        } else {
-                            $bindingList[] = "{$iface['type']} {$iface['number']}";
-                        }
-                    }
-
-                    $bindingInfo = implode(', ', $bindingList);
-
-                    // Use device IP as external IP if available
-                    $externalIP = $data['ip_address'] ?? 'N/A';
-
-                    $wanDetails[] = [
-                        'type' => 'Bridge',
-                        'name' => $vlan !== 'default' ? "Bridge_VLAN_{$vlan}" : "Bridge_Connection",
-                        'status' => 'Connected',
-                        'connection_type' => 'Bridged',
-                        'external_ip' => $externalIP,
-                        'gateway' => 'N/A',
-                        'subnet_mask' => 'N/A',
-                        'dns_servers' => 'N/A',
-                        'mac_address' => $data['mac_address'] ?? 'N/A',
-                        'addressing_type' => 'Bridged',
-                        'uptime' => $data['uptime'] ?? 'N/A',
-                        'binding' => $bindingInfo,
-                        'username' => 'N/A',
-                        'last_error' => 'N/A',
-                        'mru_size' => 'N/A',
-                    ];
-
-                    $connIndex++;
-                }
-            }
-        }
-
-        $data['wan_details'] = $wanDetails;
-
-        // Extract PPPoE username from first PPPoE connection (for devices.php display)
-        $pppoeUsername = 'N/A';
-        foreach ($wanDetails as $wan) {
-            if ($wan['type'] === 'PPPoE' && isset($wan['username']) && $wan['username'] !== 'N/A' && $wan['username'] !== '') {
-                $pppoeUsername = $wan['username'];
-                break; // Use first found PPPoE username (non-empty)
-            }
-        }
-        $data['pppoe_username'] = $pppoeUsername;
-
-        // Connected Devices (LAN Hosts)
-        $connectedDevices = [];
-
-        // Get hosts from LANDevice.1.Hosts.Host
-        $hostsBase = 'InternetGatewayDevice.LANDevice.1.Hosts.Host';
-
-        // Get device's last inform time for comparison
-        $deviceLastInformTime = null;
-        if ($lastInform) {
-            $deviceLastInformTime = strtotime($lastInform);
-        }
-
-        // Try to get hosts object
-        if (isset($device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['Host'])) {
-            $hosts = $device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['Host'];
-
-            // Iterate through all host entries
-            foreach ($hosts as $hostId => $hostData) {
-                // Skip metadata fields
-                if (strpos($hostId, '_') === 0) {
-                    continue;
-                }
-
-                // Get host details
-                $ipAddress = isset($hostData['IPAddress']['_value']) ? $hostData['IPAddress']['_value'] : null;
-                $macAddress = isset($hostData['MACAddress']['_value']) ? $hostData['MACAddress']['_value'] : null;
-                $hostName = isset($hostData['HostName']['_value']) ? $hostData['HostName']['_value'] : '';
-                $interfaceType = isset($hostData['InterfaceType']['_value']) ? $hostData['InterfaceType']['_value'] : 'Unknown';
-                $active = isset($hostData['Active']['_value']) ? $hostData['Active']['_value'] : null;
-                $timestamp = isset($hostData['_timestamp']) ? $hostData['_timestamp'] : null;
-
-                // Only add devices with valid IP and MAC
-                if ($ipAddress && $macAddress) {
-                    // Filter strategy: Only count hosts that were updated recently relative to device last inform
-                    // This filters out old/disconnected devices from GenieACS historical data
-                    $isRecentlyActive = true; // Default to true if no timestamp
-
-                    if ($timestamp && $deviceLastInformTime) {
-                        $hostTimestamp = strtotime($timestamp);
-                        if ($hostTimestamp !== false) {
-                            // Strategy: Count host as active if:
-                            // 1. Host timestamp is within 3 hours before OR after device last inform
-                            // 2. This catches hosts that were active around the time of last inform
-                            //    (accounts for clock drift and DHCP lease refresh timing)
-                            $threeHoursBefore = $deviceLastInformTime - (3 * 3600);
-                            $threeHoursAfter = $deviceLastInformTime + (3 * 3600);
-                            $isRecentlyActive = ($hostTimestamp >= $threeHoursBefore && $hostTimestamp <= $threeHoursAfter);
-                        }
-                    }
-
-                    // Skip hosts that are not recently active
-                    if (!$isRecentlyActive) {
-                        continue;
-                    }
-
-                    // Determine interface type (WiFi/LAN)
-                    $connectionType = 'LAN';
-                    if ($interfaceType === '802.11') {
-                        $connectionType = 'WiFi';
-                    } elseif ($interfaceType === 'Ethernet') {
-                        $connectionType = 'Ethernet';
-                    }
-
-                    // Get MAC vendor name
-                    $vendorName = getMACVendor($macAddress, $hostName);
-
-                    // If hostname is empty and vendor found, use vendor name
-                    // Otherwise use "Unknown Device"
-                    if (empty($hostName) || trim($hostName) === '') {
-                        $hostName = $vendorName;
-                    }
-
-                    $connectedDevices[] = [
-                        'hostname' => $hostName,
-                        'vendor' => $vendorName,
-                        'ip_address' => $ipAddress,
-                        'mac_address' => $macAddress,
-                        'interface_type' => $connectionType,
-                        'active' => $active ?? true, // Default to active if not specified
-                    ];
-                }
-            }
-        }
-
-        $data['connected_devices'] = $connectedDevices;
-        $data['connected_devices_count'] = count($connectedDevices);
-
-        // DHCP Server Configuration
-        $dhcpServer = [];
-        $dhcpBase = 'InternetGatewayDevice.LANDevice.1.LANHostConfigManagement';
-
-        // Check if DHCP capability exists by checking for any DHCP parameter
-        // (not just DHCPServerEnable, as it may not have _value if not configured)
-        $hasdhcpCapability = false;
-
-        // Check multiple DHCP parameters to determine if device supports DHCP
-        $dhcpEnabled = $getParam("{$dhcpBase}.DHCPServerEnable");
-        $dhcpLeaseTime = $getParam("{$dhcpBase}.DHCPLeaseTime");
-
-        // Device has DHCP capability if any DHCP parameter is present
-        if ($dhcpEnabled !== null || $dhcpLeaseTime !== null) {
-            $hasdhcpCapability = true;
-        }
-
-        if ($hasdhcpCapability) {
-            // Extract DHCP parameters (use false/N/A as defaults if not configured)
-            $dhcpServer['enabled'] = $dhcpEnabled ?? false;
-            $dhcpServer['configurable'] = $getParam("{$dhcpBase}.DHCPServerConfigurable") ?? true;
-            $dhcpServer['min_address'] = $getParam("{$dhcpBase}.MinAddress") ?? 'N/A';
-            $dhcpServer['max_address'] = $getParam("{$dhcpBase}.MaxAddress") ?? 'N/A';
-            $dhcpServer['subnet_mask'] = $getParam("{$dhcpBase}.SubnetMask") ?? 'N/A';
-            $dhcpServer['gateway'] = $getParam("{$dhcpBase}.IPRouters") ?? 'N/A';
-            $dhcpServer['dns_servers'] = $getParam("{$dhcpBase}.DNSServers") ?? 'N/A';
-            $dhcpServer['lease_time'] = $dhcpLeaseTime ?? 86400; // Default to 24 hours
-
-            $data['dhcp_server'] = $dhcpServer;
-        } else {
-            // Device does not support DHCP - set to null
-            $data['dhcp_server'] = null;
-        }
-
-        // Admin Web Access Credentials
-        $data['admin_user'] = $getParam('VirtualParameters.superAdmin') ?? 'N/A';
-        $data['admin_password'] = $getParam('VirtualParameters.superPassword') ?? 'N/A';
-        $data['telecom_password'] = $getParam('InternetGatewayDevice.DeviceInfo.X_CT-COM_TeleComAccount.Password') ?? 'N/A';
-
-        // Tags
-        $data['tags'] = $device['_tags'] ?? [];
-
-        return $data;
+        });
+    } else {
+        // Filter map items by type for other infrastructure
+        items = allMapItems.filter(item => item.item_type === itemType);
     }
 
-    /**
-     * Fast Bulk Summon (Smart Queuing)
-     *
-     * Semua task masuk antrean tanpa ?connection_request (instan, GenieACS cuma mencatat).
-     * Hanya task TERAKHIR yang membawa ?connection_request sebagai "alarm" (wake-up call),
-     * jadi modem cuma digedor 1x untuk mengerjakan semua task.
-     *
-     * Task disesuaikan dengan data model modem (TR-098 / TR-181) supaya tidak ada task
-     * yang menunjuk path yang tidak ada (fault 9005 yang nyangkut di antrean).
-     * Cakupan: VirtualParameters (admin), WLAN (SSID), Hosts (Client).
-     */
-    public function bulkSummonFast($deviceId) {
-        $encodedId = rawurlencode($deviceId);
-        $root = $this->detectRoot($deviceId);
-
-        $queue  = "/devices/{$encodedId}/tasks";                     // instan, cuma nyatet antrean
-        $wakeUp = "/devices/{$encodedId}/tasks?connection_request";  // dipakai SEKALI, di task terakhir
-
-        $refresh = function ($endpoint, $objectName) {
-            return $this->request($endpoint, 'POST', [
-                'name' => 'refreshObject',
-                'objectName' => $objectName
-            ]);
-        };
-
-        // Selalu: kredensial admin
-        $refresh($queue, 'VirtualParameters');
-
-        if ($root === 'tr098') {
-            $refresh($queue,  'InternetGatewayDevice.LANDevice.1.WLANConfiguration'); // SSID
-            $refresh($wakeUp, 'InternetGatewayDevice.LANDevice.1.Hosts');             // client + alarm
-        } elseif ($root === 'tr181') {
-            $refresh($queue,  'Device.WiFi');                                         // SSID
-            $refresh($wakeUp, 'Device.Hosts');                                        // client + alarm
-        } else {
-            // Model belum ketahuan: kirim dua-duanya (perilaku lama)
-            $refresh($queue,  'InternetGatewayDevice.LANDevice.1.WLANConfiguration');
-            $refresh($queue,  'Device.WiFi');
-            $refresh($queue,  'InternetGatewayDevice.LANDevice.1.Hosts');
-            $refresh($wakeUp, 'Device.Hosts');
-        }
-
-        return ['success' => true];
+    if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No items found</td></tr>';
+        updateDeviceCount(0, 0);
+        return;
     }
 
-    /**
-     * Summon massal PARALEL (server-side) untuk ratusan device sekaligus.
-     *
-     * Beda dengan bulkSummonFast() yang dipanggil per device:
-     * - Deteksi model (TR-098/TR-181) cukup 1x GET kecil untuk SEMUA device.
-     * - Semua POST task dikirim lewat curl_multi (default 40 koneksi paralel) dari 1 proses PHP,
-     *   jadi tidak menghabiskan worker PHP-FPM dan tidak bergantung ke browser.
-     * - Dua fase: (1) semua task masuk antrean tanpa ?connection_request (instan),
-     *   (2) task "alarm" terakhir tiap device dengan ?connection_request. Prinsip Smart Queuing
-     *   tetap: modem digedor 1x untuk mengerjakan semua task.
-     *
-     * @param array $deviceIds   Daftar device ID
-     * @param int   $concurrency Jumlah koneksi paralel ke NBI GenieACS
-     * @return array ['success','total','success_count','fail_count','tasks_ok','tasks_failed']
-     */
-    public function bulkSummonParallel(array $deviceIds, int $concurrency = 40) {
-        $deviceIds = array_values(array_unique(array_filter($deviceIds, 'strlen')));
-        $total = count($deviceIds);
+    items.forEach(item => {
+        const row = document.createElement('tr');
 
-        if ($total === 0) {
-            return ['success' => true, 'total' => 0, 'success_count' => 0, 'fail_count' => 0,
-                    'tasks_ok' => 0, 'tasks_failed' => 0];
+        // Get status badge
+        const status = item.status || 'unknown';
+        let statusBadge = '';
+        if (status === 'online') {
+            statusBadge = '<span class="badge online">Online</span>';
+        } else if (status === 'offline') {
+            statusBadge = '<span class="badge offline">Offline</span>';
+        } else {
+            statusBadge = '<span class="badge bg-secondary">Unknown</span>';
         }
 
-        // 1) Satu GET kecil: root data model semua device (hanya ProductClass, ukurannya kecil)
-        $roots = [];
-        $projection = urlencode('InternetGatewayDevice.DeviceInfo.ProductClass,Device.DeviceInfo.ProductClass');
-        $res = $this->request("/devices/?projection={$projection}");
-        if ($res['success'] && is_array($res['data'])) {
-            foreach ($res['data'] as $d) {
-                if (!isset($d['_id'])) continue;
-                if (isset($d['InternetGatewayDevice'])) {
-                    $roots[$d['_id']] = 'tr098';
-                } elseif (isset($d['Device'])) {
-                    $roots[$d['_id']] = 'tr181';
-                }
+        // Format coordinates
+        const lat = parseFloat(item.latitude).toFixed(6);
+        const lng = parseFloat(item.longitude).toFixed(6);
+
+        // For OLT, show server name in parentheses
+        const displayName = itemType === 'olt' ? `${item.name} (${item.server_name})` : item.name;
+
+        row.innerHTML = `
+            <td>${displayName}</td>
+            <td><span class="badge bg-primary">${itemType.toUpperCase()}</span></td>
+            <td>${lat}</td>
+            <td>${lng}</td>
+            <td>${statusBadge}</td>
+            <td>
+                <button class="btn btn-sm btn-success" onclick="window.open('/map.php?focus_type=server&focus_id=${item.id}', '_blank')" title="View on Map">
+                    <i class="bi bi-map"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    updateDeviceCount(items.length, items.length);
+}
+
+function updateDeviceCount(shown, total) {
+    const countElement = document.getElementById('device-count');
+
+    // If using pagination, show range
+    if (itemsPerPage > 0 && total > itemsPerPage) {
+        const startIndex = (currentPage - 1) * itemsPerPage + 1;
+        const endIndex = Math.min(currentPage * itemsPerPage, total);
+        countElement.textContent = `Showing ${startIndex}-${endIndex} of ${total} item${total !== 1 ? 's' : ''}`;
+    } else if (shown === total) {
+        countElement.textContent = `Showing ${total} item${total !== 1 ? 's' : ''}`;
+    } else {
+        countElement.textContent = `Showing ${shown} of ${total} item${total !== 1 ? 's' : ''}`;
+    }
+}
+
+function filterByStatus(status) {
+    currentStatusFilter = status;
+    applyRbFilter(); // Panggil fungsi master filter
+}
+
+function updateDeviceStats(devices, showStats = true) {
+    const statsContainer = document.getElementById('device-stats-badges');
+
+    if (!showStats) {
+        statsContainer.innerHTML = '';
+        return;
+    }
+
+    const total = devices.length;
+    const online = devices.filter(d => d.status === 'online').length;
+    const offline = total - online;
+
+    // Bikin efek redup untuk tombol yang tidak dipilih
+    const opTotal = currentStatusFilter === 'all' ? '1' : '0.4';
+    const opOnline = currentStatusFilter === 'online' ? '1' : '0.4';
+    const opOffline = currentStatusFilter === 'offline' ? '1' : '0.4';
+
+    statsContainer.innerHTML = `
+        <span class="badge bg-secondary shadow-sm" style="cursor: pointer; opacity: ${opTotal}; transition: 0.2s;" onclick="filterByStatus('all')">TOTAL [${total}]</span>
+        <span class="badge bg-success shadow-sm" style="cursor: pointer; opacity: ${opOnline}; transition: 0.2s;" onclick="filterByStatus('online')">ONLINE [${online}]</span>
+        <span class="badge bg-danger shadow-sm" style="cursor: pointer; opacity: ${opOffline}; transition: 0.2s;" onclick="filterByStatus('offline')">OFFLINE [${offline}]</span>
+    `;
+}
+
+// Update badge ONU di tab (mengikuti filter RB yang sedang dipilih)
+function updateDeviceTypeCountsFromMap(devices, mapCounts) {
+    const onuBadge = document.getElementById('count-onu');
+    if (onuBadge) {
+        onuBadge.textContent = getRbFilteredDevices().length;
+    }
+}
+
+// Generate table header based on device type
+function generateTableHeader(type) {
+    const tableHeader = document.getElementById('table-header');
+
+    if (type === 'onu') {
+        // Check current tags column visibility state
+        const tagsDisplay = tagsColumnVisible ? '' : 'none';
+
+        // ONU devices table header (GenieACS devices)
+        tableHeader.innerHTML = `
+            <tr>
+                <th style="width: 40px;">
+                    <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()" title="Select All">
+                </th>
+                <th>SN</th>
+                <th>MAC</th>
+                <th class="sortable" onclick="sortTable('product_class')" style="cursor: pointer;">
+                    Tipe <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('ip')" style="cursor: pointer;">
+                    IP <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('ssid')" style="cursor: pointer;">
+                    SSID <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('pppoe_username')" style="cursor: pointer;">
+                    PPPoE <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('rx_power')" style="cursor: pointer;">
+                    Rx <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('temperature')" style="cursor: pointer;">
+                    Temp <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('connected_clients')" style="cursor: pointer;">
+                    Client <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('status')" style="cursor: pointer;">
+                    Status <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="tags-column sortable" onclick="sortTable('tags')" style="cursor: pointer; display: ${tagsDisplay};">
+                    Tags <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th>Action</th>
+            </tr>
+        `;
+    } else {
+        // Infrastructure items table header (Map items: Server, OLT, ODC, ODP)
+        tableHeader.innerHTML = `
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Latitude</th>
+                <th>Longitude</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        `;
+    }
+}
+
+// Filter devices by type using map data
+function filterByType(type) {
+    currentFilterType = type;
+
+    // Generate appropriate table header
+    generateTableHeader(type);
+
+    // Clear search box when switching tabs
+    document.getElementById('search-input').value = '';
+
+    // Update search placeholder based on tab
+    updateSearchPlaceholder(type);
+
+    // Reset sort state
+    currentSortColumn = null;
+    currentSortDirection = 'asc';
+    resetSortIcons();
+
+    if (type === 'onu') {
+        // ONU: lewat master filter supaya filter RB/status tetap kepakai
+        applyRbFilter();
+    } else {
+        // For ODP, ODC, OLT, Server: show map items
+        renderMapItems(type);
+        // Hide stats for infrastructure tabs
+        updateDeviceStats([], false);
+    }
+}
+
+function extractIP(ipString) {
+    if (!ipString || ipString === 'N/A') return 'N/A';
+    const match = ipString.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+    return match ? match[1] : 'N/A';
+}
+
+// Update search placeholder based on current tab
+function updateSearchPlaceholder(type) {
+    const searchInput = document.getElementById('search-input');
+    if (type === 'onu') {
+        searchInput.placeholder = 'Search by Serial Number, MAC Address, or Tags...';
+    } else {
+        searchInput.placeholder = 'Search by Name...';
+    }
+}
+
+// Search functionality
+function filterDevices() {
+    applyRbFilter(); // Re-apply master filter to include status and type filters
+}
+
+function clearSearch() {
+    document.getElementById('search-input').value = '';
+    filterDevices();
+}
+
+// Apply sorting to devices array
+function applySorting(devices, column, direction) {
+    const sortedDevices = [...devices];
+
+    sortedDevices.sort((a, b) => {
+        let valueA, valueB;
+
+        switch (column) {
+            case 'product_class':
+                valueA = (a.product_class || '').toLowerCase();
+                valueB = (b.product_class || '').toLowerCase();
+                break;
+            case 'ip':
+                valueA = extractIP(a.ip_tr069);
+                valueB = extractIP(b.ip_tr069);
+                // Convert IP to comparable format
+                valueA = valueA === 'N/A' ? '' : valueA.split('.').map(n => n.padStart(3, '0')).join('.');
+                valueB = valueB === 'N/A' ? '' : valueB.split('.').map(n => n.padStart(3, '0')).join('.');
+                break;
+            case 'ssid':
+                valueA = (a.wifi_ssid || '').toLowerCase();
+                valueB = (b.wifi_ssid || '').toLowerCase();
+                break;
+            case 'pppoe_username':
+                valueA = (a.pppoe_username || '').toLowerCase();
+                valueB = (b.pppoe_username || '').toLowerCase();
+                break;
+            case 'rx_power':
+                valueA = parseFloat(a.rx_power) || -999;
+                valueB = parseFloat(b.rx_power) || -999;
+                break;
+            case 'temperature':
+                valueA = parseFloat(a.temperature) || -999;
+                valueB = parseFloat(b.temperature) || -999;
+                break;
+            case 'connected_clients':
+                valueA = parseInt(a.connected_devices_count) || 0;
+                valueB = parseInt(b.connected_devices_count) || 0;
+                break;
+            case 'status':
+                valueA = a.status || '';
+                valueB = b.status || '';
+                break;
+            case 'tags':
+                // Sort by tags: join array to string, empty array goes to bottom
+                valueA = (a.tags && Array.isArray(a.tags) && a.tags.length > 0) ? a.tags.join(', ').toLowerCase() : 'zzz';
+                valueB = (b.tags && Array.isArray(b.tags) && b.tags.length > 0) ? b.tags.join(', ').toLowerCase() : 'zzz';
+                break;
+            default:
+                return 0;
+        }
+
+        let comparison = 0;
+        if (valueA > valueB) comparison = 1;
+        if (valueA < valueB) comparison = -1;
+
+        return direction === 'asc' ? comparison : -comparison;
+    });
+
+    return sortedDevices;
+}
+
+// Sorting functionality (filter RB/status/search + sorting ditangani applyRbFilter)
+function sortTable(column) {
+    // Toggle sort direction if clicking same column
+    if (currentSortColumn === column) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = column;
+        currentSortDirection = 'asc';
+    }
+
+    applyRbFilter(true);
+    updateSortIcons(column, currentSortDirection);
+}
+
+function updateSortIcons(column, direction) {
+    // Reset all sort icons
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+        icon.className = 'bi bi-chevron-expand sort-icon';
+    });
+
+    // Update active sort icon (indices shifted +1 due to checkbox column)
+    const columnMap = {
+        'product_class': 4,
+        'ip': 5,
+        'ssid': 6,
+        'pppoe_username': 7,
+        'rx_power': 8,
+        'temperature': 9,
+        'connected_clients': 10,
+        'status': 11,
+        'tags': 12
+    };
+
+    const columnIndex = columnMap[column];
+    if (columnIndex) {
+        const header = document.querySelector(`thead tr th:nth-child(${columnIndex}) .sort-icon`);
+        if (header) {
+            header.className = direction === 'asc' ? 'bi bi-chevron-up sort-icon' : 'bi bi-chevron-down sort-icon';
+        }
+    }
+}
+
+function resetSortIcons() {
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+        icon.className = 'bi bi-chevron-expand sort-icon';
+    });
+}
+
+// ---------------------------------------------------------------------------
+// SINGLE SUMMON
+// ---------------------------------------------------------------------------
+// currentSummonDeviceId defined in devices-state.js
+
+function summonDeviceQuick(deviceId) {
+    currentSummonDeviceId = deviceId;
+    document.getElementById('summon-device-id').textContent = deviceId;
+    const modal = new bootstrap.Modal(document.getElementById('summonModal'), {
+        backdrop: false
+    });
+    modal.show();
+}
+
+function showNotInMapAlert(serialNumber) {
+    document.getElementById('not-in-map-serial').textContent = decodeURIComponent(serialNumber);
+    const modal = new bootstrap.Modal(document.getElementById('notInMapModal'), {
+        backdrop: false
+    });
+    modal.show();
+}
+
+async function confirmSummon() {
+    if (!currentSummonDeviceId) return;
+
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('summonModal'));
+    modal.hide();
+
+    showLoading();
+
+    const result = await fetchAPI('/api/summon-device.php', {
+        method: 'POST',
+        body: JSON.stringify({ device_id: currentSummonDeviceId })
+    });
+
+    hideLoading();
+
+    if (result && result.success) {
+        showToast('Device summon berhasil!', 'success');
+    } else {
+        showToast(result?.message || 'Gagal summon device', 'danger');
+    }
+
+    currentSummonDeviceId = null;
+}
+
+// ---------------------------------------------------------------------------
+// PAGINATION
+// ---------------------------------------------------------------------------
+function updatePaginationUI(total) {
+    const paginationContainer = document.getElementById('pagination-container');
+    const paginationInfo = document.getElementById('pagination-info');
+    const paginationFirst = document.getElementById('pagination-first');
+    const paginationPrev = document.getElementById('pagination-prev');
+    const paginationNext = document.getElementById('pagination-next');
+    const paginationLast = document.getElementById('pagination-last');
+
+    // Hide pagination if showing all or no items
+    if (itemsPerPage === 0 || total === 0) {
+        paginationContainer.style.display = 'none';
+        return;
+    }
+
+    const totalPages = Math.ceil(total / itemsPerPage);
+
+    // Show pagination only if more than 1 page
+    if (totalPages <= 1) {
+        paginationContainer.style.display = 'none';
+        return;
+    }
+
+    paginationContainer.style.display = 'block';
+
+    // Update page info
+    paginationInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+
+    // Update button states
+    if (currentPage <= 1) {
+        paginationFirst.classList.add('disabled');
+        paginationPrev.classList.add('disabled');
+    } else {
+        paginationFirst.classList.remove('disabled');
+        paginationPrev.classList.remove('disabled');
+    }
+
+    if (currentPage >= totalPages) {
+        paginationNext.classList.add('disabled');
+        paginationLast.classList.add('disabled');
+    } else {
+        paginationNext.classList.remove('disabled');
+        paginationLast.classList.remove('disabled');
+    }
+}
+
+function goToPage(page) {
+    const totalPages = Math.ceil(totalDevices / itemsPerPage);
+
+    if (page < 1 || page > totalPages) return;
+    if (page === currentPage) return;
+
+    currentPage = page;
+
+    if (currentFilterType === 'onu') {
+        applyRbFilter(true);
+    } else {
+        filterByType(currentFilterType);
+    }
+
+    // Scroll to top of table
+    document.getElementById('devices-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function changeItemsPerPage() {
+    const selector = document.getElementById('items-per-page');
+    itemsPerPage = parseInt(selector.value);
+
+    // Reset to page 1 when changing items per page
+    currentPage = 1;
+
+    if (currentFilterType === 'onu') {
+        applyRbFilter(true);
+    } else {
+        filterByType(currentFilterType);
+    }
+}
+
+// Toggle Tags column visibility
+function toggleTagsColumn() {
+    tagsColumnVisible = !tagsColumnVisible;
+
+    const tagColumns = document.querySelectorAll('.tags-column');
+    const toggleBtn = document.getElementById('toggle-tags-btn');
+
+    if (tagsColumnVisible) {
+        // Show tags column
+        tagColumns.forEach(col => {
+            col.style.display = '';
+        });
+        toggleBtn.innerHTML = '<i class="bi bi-tags-fill"></i> Hide Tags';
+        toggleBtn.classList.remove('btn-secondary');
+        toggleBtn.classList.add('btn-primary');
+    } else {
+        // Hide tags column
+        tagColumns.forEach(col => {
+            col.style.display = 'none';
+        });
+        toggleBtn.innerHTML = '<i class="bi bi-tags"></i> Show Tags';
+        toggleBtn.classList.remove('btn-primary');
+        toggleBtn.classList.add('btn-secondary');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BULK SELECTION
+// ---------------------------------------------------------------------------
+function toggleSelectAll() {
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    const deviceCheckboxes = document.querySelectorAll('.device-checkbox');
+
+    deviceCheckboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+
+    updateBulkActionButtons();
+}
+
+function updateBulkActionButtons() {
+    const selectedCheckboxes = document.querySelectorAll('.device-checkbox:checked');
+    const bulkActionButtons = document.getElementById('bulk-action-buttons');
+    const selectedCount = document.getElementById('selected-count');
+
+    if (bulkActionButtons) {
+        if (selectedCheckboxes.length > 0) {
+            bulkActionButtons.style.display = 'inline-block';
+            if (selectedCount) selectedCount.textContent = `${selectedCheckboxes.length} selected`;
+        } else {
+            bulkActionButtons.style.display = 'none';
+        }
+    }
+
+    // Update select-all checkbox state
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    const allCheckboxes = document.querySelectorAll('.device-checkbox');
+    if (selectAllCheckbox && allCheckboxes.length > 0) {
+        selectAllCheckbox.checked = selectedCheckboxes.length === allCheckboxes.length;
+    }
+}
+
+function getSelectedDeviceIds() {
+    const selectedCheckboxes = document.querySelectorAll('.device-checkbox:checked');
+    return Array.from(selectedCheckboxes).map(cb => decodeURIComponent(cb.value));
+}
+
+// Kosongkan semua pilihan + sembunyikan bar Add Tag/Untag/Summon/Delete
+function resetSelection() {
+    document.querySelectorAll('.device-checkbox').forEach(cb => cb.checked = false);
+
+    const selectAll = document.getElementById('select-all-checkbox');
+    if (selectAll) selectAll.checked = false;
+
+    if (typeof selectedDevices !== 'undefined' && selectedDevices && selectedDevices.clear) {
+        selectedDevices.clear();
+    }
+
+    updateBulkActionButtons();
+}
+
+// ---------------------------------------------------------------------------
+// BULK ADD TAG
+// ---------------------------------------------------------------------------
+function showBulkAddTagModal() {
+    const selectedIds = getSelectedDeviceIds();
+    document.getElementById('add-tag-count').textContent = selectedIds.length;
+    document.getElementById('new-tag-name').value = '';
+
+    const modal = new bootstrap.Modal(document.getElementById('bulkAddTagModal'), {
+        backdrop: false
+    });
+    modal.show();
+}
+
+async function confirmBulkAddTag() {
+    const selectedIds = getSelectedDeviceIds();
+    const tagName = document.getElementById('new-tag-name').value.trim();
+
+    if (!tagName) {
+        showToast('Please enter a tag name', 'warning');
+        return;
+    }
+
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('bulkAddTagModal'));
+    modal.hide();
+
+    showLoading();
+
+    const result = await fetchAPI('/api/bulk-tag.php', {
+        method: 'POST',
+        body: JSON.stringify({
+            action: 'add',
+            device_ids: selectedIds,
+            tag: tagName
+        })
+    });
+
+    hideLoading();
+
+    console.log('Bulk Add Tag Response:', result);
+
+    // Show detailed debug info if available
+    if (result && result.debug) {
+        console.table(result.debug);
+    }
+
+    if (result && result.success) {
+        showToast(`Tag "${tagName}" added to ${result.success_count || selectedIds.length} device(s)`, 'success');
+
+        if (result.fail_count && result.fail_count > 0) {
+            console.warn('Some devices failed:', result.errors);
+            console.warn('Debug info for failures:', result.debug);
+            showToast(`Warning: ${result.fail_count} device(s) failed`, 'warning');
+        }
+
+        resetSelection();
+        loadDevices(); // Reload devices to show updated tags
+    } else {
+        console.error('Add tag failed:', result);
+        if (result && result.debug) {
+            console.error('Debug details:', result.debug);
+        }
+        showToast(result?.message || 'Failed to add tags', 'error');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BULK UNTAG
+// ---------------------------------------------------------------------------
+function showBulkUntagModal() {
+    const selectedIds = getSelectedDeviceIds();
+    document.getElementById('untag-count').textContent = selectedIds.length;
+
+    // Clear input field
+    const inputField = document.getElementById('remove-tag-name');
+    inputField.value = '';
+
+    const modal = new bootstrap.Modal(document.getElementById('bulkUntagModal'), {
+        backdrop: false
+    });
+    modal.show();
+}
+
+async function confirmBulkUntag() {
+    const selectedIds = getSelectedDeviceIds();
+    const tagName = document.getElementById('remove-tag-name').value.trim();
+
+    if (!tagName) {
+        showToast('Please enter a tag name to remove', 'warning');
+        return;
+    }
+
+    console.log('Bulk Untag Request:', {
+        action: 'remove',
+        device_ids: selectedIds,
+        tag: tagName
+    });
+
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('bulkUntagModal'));
+    modal.hide();
+
+    showLoading();
+
+    const result = await fetchAPI('/api/bulk-tag.php', {
+        method: 'POST',
+        body: JSON.stringify({
+            action: 'remove',
+            device_ids: selectedIds,
+            tag: tagName
+        })
+    });
+
+    hideLoading();
+
+    console.log('Bulk Untag Response:', result);
+
+    // Show detailed debug info if available
+    if (result && result.debug) {
+        console.table(result.debug);
+    }
+
+    if (result && result.success) {
+        showToast(`Tag "${tagName}" removed from ${result.success_count || selectedIds.length} device(s)`, 'success');
+
+        if (result.fail_count && result.fail_count > 0) {
+            console.warn('Some devices failed:', result.errors);
+            console.warn('Debug info for failures:', result.debug);
+            showToast(`Warning: ${result.fail_count} device(s) failed`, 'warning');
+        }
+
+        resetSelection();
+        loadDevices(); // Reload devices to show updated tags
+    } else {
+        console.error('Untag failed:', result);
+        if (result && result.debug) {
+            console.error('Debug details:', result.debug);
+        }
+        showToast(result?.message || 'Failed to remove tags', 'error');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BULK DELETE
+// ---------------------------------------------------------------------------
+function showBulkDeleteModal() {
+    const selectedIds = getSelectedDeviceIds();
+    document.getElementById('delete-count').textContent = selectedIds.length;
+
+    const modal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'), {
+        backdrop: false
+    });
+    modal.show();
+}
+
+async function confirmBulkDelete() {
+    const selectedIds = getSelectedDeviceIds();
+
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal'));
+    modal.hide();
+
+    showLoading();
+
+    const result = await fetchAPI('/api/bulk-delete-devices.php', {
+        method: 'POST',
+        body: JSON.stringify({
+            device_ids: selectedIds
+        })
+    });
+
+    hideLoading();
+
+    if (result && result.success) {
+        showToast(`${selectedIds.length} device(s) deleted successfully`, 'success');
+        resetSelection();
+        loadDevices(); // Reload devices
+    } else {
+        showToast(result?.message || 'Failed to delete devices', 'error');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// INIT & AUTO-REFRESH
+// ---------------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', function() {
+
+    if (window.GENIEACS_CONFIGURED) loadDevices(); // Initial load (manual)
+
+    // Start auto-refresh timer
+    if (window.GENIEACS_CONFIGURED) autoRefreshTimer = setInterval(() => loadDevices(true), 60000); // Auto-refresh every 60 seconds
+
+    // Keyboard shortcuts for pagination (Left/Right arrow keys)
+    document.addEventListener('keydown', function(e) {
+        // Only work if not typing in input field
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            return;
+        }
+
+        const totalPages = Math.ceil(totalDevices / itemsPerPage);
+
+        if (e.key === 'ArrowLeft' && currentPage > 1) {
+            goToPage(currentPage - 1);
+        } else if (e.key === 'ArrowRight' && currentPage < totalPages) {
+            goToPage(currentPage + 1);
+        }
+    });
+});
+
+// Cleanup: Stop auto-refresh when user navigates away
+window.addEventListener('beforeunload', function() {
+    if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+    }
+});
+
+// Also cleanup on page visibility change (when tab becomes hidden)
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        // Page is hidden, stop auto-refresh to save resources
+        if (autoRefreshTimer) {
+            clearInterval(autoRefreshTimer);
+            autoRefreshTimer = null;
+        }
+    } else {
+        // Page is visible again, restart auto-refresh
+        if (!autoRefreshTimer) {
+            if (window.GENIEACS_CONFIGURED) autoRefreshTimer = setInterval(() => loadDevices(true), 60000);
+        }
+    }
+});
+
+// ---------------------------------------------------------------------------
+// MASTER FILTER (RB + Status + Search + Sort + Pagination)
+// ---------------------------------------------------------------------------
+function getRbFilteredDevices() {
+    const rbElement = document.getElementById('rbFilter');
+    const rbFilter = rbElement ? rbElement.value.toLowerCase() : 'all';
+    if (rbFilter === 'all') return allDevices;
+
+    const prefixMap = { '56c': '10.123.', 'klaling': '10.124.', 'sosok': '10.125.' };
+    const prefix = prefixMap[rbFilter];
+    if (!prefix) return [];
+
+    return allDevices.filter(d => extractIP(d.ip_tr069).startsWith(prefix));
+}
+
+function applyRbFilter(keepPage = false) {
+    if (!keepPage) currentPage = 1;
+
+    // 1. Filter RB
+    const rbFilteredDevices = getRbFilteredDevices();
+
+    // Badge TOTAL/ONLINE/OFFLINE ikut RB yang dipilih (sebelum dipotong status)
+    updateDeviceStats(rbFilteredDevices, true);
+
+    let devicesToRender = rbFilteredDevices;
+
+    // 2. Filter status
+    if (currentStatusFilter !== 'all') {
+        devicesToRender = devicesToRender.filter(device => (device.status || 'offline') === currentStatusFilter);
+    }
+
+    // 3. Filter search
+    const searchInput = document.getElementById('search-input');
+    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    if (searchTerm !== '') {
+        devicesToRender = devicesToRender.filter(device => {
+            const serialNumber = (device.serial_number || '').toLowerCase();
+            const macAddress = (device.mac_address || '').toLowerCase();
+            let tagsMatch = false;
+            if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
+                tagsMatch = device.tags.some(tag => tag.toLowerCase().includes(searchTerm));
+            }
+            return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || tagsMatch;
+        });
+    }
+
+    // 4. Sorting (kalau sedang aktif)
+    if (currentSortColumn) {
+        devicesToRender = applySorting(devicesToRender, currentSortColumn, currentSortDirection);
+    }
+
+    // 5. Jaga-jaga halaman melebihi jumlah halaman yang ada
+    if (itemsPerPage > 0) {
+        const maxPage = Math.max(1, Math.ceil(devicesToRender.length / itemsPerPage));
+        if (currentPage > maxPage) currentPage = maxPage;
+    }
+
+    // 6. Render
+    renderDevices(devicesToRender);
+    updateDeviceCount(devicesToRender.length, allDevices.length);
+
+    const onuBadge = document.getElementById('count-onu');
+    if (onuBadge) onuBadge.textContent = devicesToRender.length;
+}
+
+// ---------------------------------------------------------------------------
+// AUTO-TAGGING berdasarkan segmen IP
+// ---------------------------------------------------------------------------
+async function syncRbTags() {
+    if (!allDevices || allDevices.length === 0) {
+        showToast('Tidak ada data device untuk disinkronisasi', 'warning');
+        return;
+    }
+
+    // Siapkan penampung untuk mengelompokkan ID perangkat yang belum punya tag
+    const rbMapping = {
+        'RB_56c': { prefix: '10.123.', ids: [] },
+        'RB_Klaling': { prefix: '10.124.', ids: [] },
+        'RB_Sosok': { prefix: '10.125.', ids: [] }
+    };
+
+    // Scan semua perangkat
+    allDevices.forEach(device => {
+        const ip = extractIP(device.ip_tr069);
+        if (ip === 'N/A') return;
+
+        // Cek apakah perangkat sudah memiliki tag RB (mengurangi beban API)
+        const tags = device.tags || [];
+        const hasRbTag = tags.some(t => ['rb_56c', 'rb_klaling', 'rb_sosok'].includes(t.toLowerCase()));
+
+        if (!hasRbTag) {
+            // Kelompokkan ID berdasarkan awalan IP
+            if (ip.startsWith(rbMapping['RB_56c'].prefix)) {
+                rbMapping['RB_56c'].ids.push(device.device_id);
+            } else if (ip.startsWith(rbMapping['RB_Klaling'].prefix)) {
+                rbMapping['RB_Klaling'].ids.push(device.device_id);
+            } else if (ip.startsWith(rbMapping['RB_Sosok'].prefix)) {
+                rbMapping['RB_Sosok'].ids.push(device.device_id);
+            }
+        }
+    });
+
+    // Hitung total device yang butuh di-tag
+    const totalToSync = rbMapping['RB_56c'].ids.length + rbMapping['RB_Klaling'].ids.length + rbMapping['RB_Sosok'].ids.length;
+
+    if (totalToSync === 0) {
+        showToast('Semua device sudah memiliki Tag RB. Tidak ada yang perlu disinkronisasi.', 'info');
+        return;
+    }
+
+    // Minta konfirmasi dari user sebelum eksekusi massal
+    if (!confirm(`Ditemukan ${totalToSync} ONU baru tanpa Tag RB. Lanjutkan proses Auto-Tagging?`)) {
+        return;
+    }
+
+    showLoading();
+
+    try {
+        // Eksekusi API bulk-tag untuk setiap kelompok RB
+        for (const [tagName, data] of Object.entries(rbMapping)) {
+            if (data.ids.length > 0) {
+                await fetchAPI('/api/bulk-tag.php', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'add',
+                        device_ids: data.ids,
+                        tag: tagName
+                    })
+                });
             }
         }
 
-        // 2) Susun daftar job: [deviceId, objectName]
-        $queueJobs = [];
-        $wakeJobs  = [];
-        foreach ($deviceIds as $id) {
-            $root = $roots[$id] ?? null;
+        hideLoading();
+        showToast(`Berhasil menempelkan tag pada ${totalToSync} device!`, 'success');
+        loadDevices(); // Muat ulang tabel agar badge birunya langsung muncul
 
-            $queueJobs[] = [$id, 'VirtualParameters']; // admin credentials
+    } catch (error) {
+        hideLoading();
+        console.error('Error saat sync tags:', error);
+        showToast('Terjadi kesalahan sistem saat sinkronisasi tag.', 'danger');
+    }
+}
 
-            if ($root === 'tr098') {
-                $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration']; // SSID
-                $wakeJobs[]  = [$id, 'InternetGatewayDevice.LANDevice.1.Hosts'];             // client + alarm
-            } elseif ($root === 'tr181') {
-                $queueJobs[] = [$id, 'Device.WiFi'];
-                $wakeJobs[]  = [$id, 'Device.Hosts'];
+// ---------------------------------------------------------------------------
+// BULK SUMMON (Smart Queuing di backend + chunking 5 device di frontend)
+// ---------------------------------------------------------------------------
+async function summonSelectedDevices() {
+    const deviceIds = getSelectedDeviceIds().filter(id => id && id.trim() !== '');
+
+    if (deviceIds.length === 0) {
+        showToast('Pilih setidaknya satu device di tabel untuk disummon!', 'warning');
+        return;
+    }
+
+    if (!confirm(`Yakin ingin melakukan Summon massal pada ${deviceIds.length} device?`)) {
+        return;
+    }
+
+    bulkBusy = true; // pause auto-refresh selama proses
+    const btn = document.getElementById('btn-bulk-summon');
+    const btnOriginal = btn ? btn.innerHTML : '';
+    showLoading();
+
+    // Pengiriman task dilakukan PARALEL di server (curl_multi), jadi browser cukup kirim
+    // beberapa request besar. 300 device/request aman dari timeout; turunkan kalau muncul "Request timeout".
+    const batchSize = 300;
+    let successTotal = 0;
+    let failTotal = 0;
+    let doneCount = 0;
+    const t0 = performance.now();
+
+    try {
+        for (let i = 0; i < deviceIds.length; i += batchSize) {
+            const batch = deviceIds.slice(i, i + batchSize);
+
+            const result = await fetchAPI('/api/summon-all.php', {
+                method: 'POST',
+                body: JSON.stringify({ device_ids: batch })
+            });
+
+            if (result && result.success) {
+                successTotal += (result.success_count || 0);
+                failTotal += (result.fail_count || 0);
             } else {
-                // Model belum ketahuan: kirim dua-duanya (perilaku lama)
-                $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'];
-                $queueJobs[] = [$id, 'Device.WiFi'];
-                $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.Hosts'];
-                $wakeJobs[]  = [$id, 'Device.Hosts'];
+                failTotal += batch.length;
             }
+
+            doneCount += batch.length;
+            if (btn) btn.textContent = `Summon ${doneCount}/${deviceIds.length}`;
         }
 
-        // 3) Fase 1: antrean (instan), Fase 2: alarm / wake-up
-        $failedDevices = [];
-        $okQueue = $this->postMulti($queueJobs, false, $concurrency, $failedDevices);
-        $okWake  = $this->postMulti($wakeJobs, true, $concurrency, $failedDevices);
-
-        $tasksTotal = count($queueJobs) + count($wakeJobs);
-        $tasksOk = $okQueue + $okWake;
-
-        return [
-            'success'       => true,
-            'total'         => $total,
-            'success_count' => $total - count($failedDevices),
-            'fail_count'    => count($failedDevices),
-            'tasks_ok'      => $tasksOk,
-            'tasks_failed'  => $tasksTotal - $tasksOk,
-        ];
-    }
-
-    /**
-     * Kirim banyak POST /tasks paralel dengan curl_multi.
-     *
-     * @param array $jobs           [[deviceId, objectName], ...]
-     * @param bool  $connectionReq  true = tambahkan ?connection_request (task alarm)
-     * @param int   $concurrency    Jumlah koneksi paralel
-     * @param array $failedDevices  (by reference) diisi deviceId yang ada task gagal
-     * @return int  Jumlah task yang sukses (HTTP 2xx)
-     */
-    private function postMulti(array $jobs, bool $connectionReq, int $concurrency, array &$failedDevices) {
-        $total = count($jobs);
-        if ($total === 0) return 0;
-
-        $mh = curl_multi_init();
-        $next = 0;
-        $inFlight = 0;
-        $ok = 0;
-        $meta = []; // spl_object_id(handle) => deviceId
-
-        $add = function () use (&$next, &$inFlight, &$meta, $total, $jobs, $mh, $connectionReq) {
-            if ($next >= $total) return false;
-            [$deviceId, $objectName] = $jobs[$next++];
-
-            $path = '/devices/' . rawurlencode($deviceId) . '/tasks' . ($connectionReq ? '?connection_request' : '');
-            $ch = curl_init($this->baseUrl . $path);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['name' => 'refreshObject', 'objectName' => $objectName]));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            if ($this->username && $this->password) {
-                curl_setopt($ch, CURLOPT_USERPWD, "{$this->username}:{$this->password}");
-            }
-
-            curl_multi_add_handle($mh, $ch);
-            $meta[spl_object_id($ch)] = $deviceId;
-            $inFlight++;
-            return true;
-        };
-
-        // Isi slot awal
-        for ($i = 0; $i < $concurrency; $i++) {
-            if (!$add()) break;
-        }
-
-        do {
-            curl_multi_exec($mh, $running);
-
-            while ($info = curl_multi_info_read($mh)) {
-                $ch = $info['handle'];
-                $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $deviceId = $meta[spl_object_id($ch)] ?? null;
-
-                if ($info['result'] === CURLE_OK && $code >= 200 && $code < 300) {
-                    $ok++;
-                } elseif ($deviceId !== null) {
-                    $failedDevices[$deviceId] = true;
-                }
-
-                unset($meta[spl_object_id($ch)]);
-                curl_multi_remove_handle($mh, $ch);
-                curl_close($ch);
-                $inFlight--;
-
-                $add(); // isi slot yang kosong dengan job berikutnya
-            }
-
-            if ($inFlight > 0) {
-                if (curl_multi_select($mh, 0.5) === -1) {
-                    usleep(1000);
-                }
-            }
-        } while ($inFlight > 0);
-
-        curl_multi_close($mh);
-        return $ok;
+        const secs = ((performance.now() - t0) / 1000).toFixed(1);
+        showToast(
+            `Perintah summon terkirim ke ${successTotal} device dalam ${secs} detik${failTotal ? `, gagal ${failTotal}` : ''}. Data modem akan terisi bertahap (1-3 menit).`,
+            failTotal ? 'warning' : 'success'
+        );
+    } catch (error) {
+        console.error('Error saat summon massal:', error);
+        showToast('Terjadi kesalahan sistem di tengah proses summon.', 'danger');
+    } finally {
+        hideLoading();
+        if (btn) btn.innerHTML = btnOriginal;
+        resetSelection();
+        bulkBusy = false;
+        // Modem butuh waktu menjawab; refresh data setelah jeda
+        setTimeout(() => loadDevices(true), 30000);
     }
 }
