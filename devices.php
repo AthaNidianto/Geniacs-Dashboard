@@ -18,7 +18,7 @@ include __DIR__ . '/views/layouts/header.php';
     </div>
 <?php else: ?>
     <div class="card">
-        <div class="card-header">
+        <div class="card-header devices-header">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <i class="bi bi-router"></i> Device List
@@ -180,9 +180,16 @@ include __DIR__ . '/views/layouts/header.php';
 </script>
 <style>
     /* Baris search + show per page melayang saat tabel di-scroll */
-    .devices-toolbar {
+    /* Header "Device List" (badge + dropdown + tombol) ikut melayang di paling atas */
+    .devices-header {
         position: sticky;
         top: 0;                      /* naikkan kalau ada navbar tetap di atas, mis. 56px */
+        z-index: 101;
+        background: #fff;
+    }
+    .devices-toolbar {
+        position: sticky;
+        top: var(--devices-header-h, 70px);   /* nempel tepat di bawah header; dihitung otomatis oleh script */
         z-index: 100;
         background: #fff;
         margin-left: 0;
@@ -194,6 +201,17 @@ include __DIR__ . '/views/layouts/header.php';
     /* Supaya sticky tidak terblokir overflow card */
     .card, .card-body { overflow: visible; }
 </style>
+<script>
+    // Hitung tinggi header supaya baris search nempel pas di bawahnya (tinggi bisa berubah saat bar bulk muncul / layar menyempit)
+    (function () {
+        const header = document.querySelector('.devices-header');
+        if (!header) return;
+        const setH = () => document.documentElement.style.setProperty('--devices-header-h', header.offsetHeight + 'px');
+        setH();
+        window.addEventListener('resize', setH);
+        if (window.ResizeObserver) new ResizeObserver(setH).observe(header);
+    })();
+</script>
 <script src="/assets/js/devices/devices-state.js"></script>
 <script src="/assets/js/devices.js?v=<?php echo filemtime(__DIR__ . '/assets/js/devices.js'); ?>"></script>
 
