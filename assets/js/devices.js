@@ -1396,3 +1396,28 @@ async function summonSelectedDevices() {
         setTimeout(() => loadDevices(true), 30000);
     }
 }
+
+let lastCheckedBox = null;
+
+document.addEventListener('click', function(e) {
+
+    const cb = e.target;
+    if (!cb.classList || cb.classList.contains('device-checkbox')) return;
+
+    if (e.shiftKey && lastCheckedBox && lastCheckedBox !== cb && document.body.contains(lastCheckedBox)) {
+        const boxes = Array.from(document.querySelectorAll('.device-checkbox'));
+        const start = boxes.indexOf(lastCheckedBox);
+        const end = boxes.indexOf(cb);
+
+        if (start !== -1 && end !== -1) {
+            const from = Math.min(start, end);
+            const to = Math.max(start, end);
+            for (let i = from; i <= to; i++) {
+                boxes[i].checked = cb.checked;
+            }
+            updateBulkActionButtons();
+        }
+    }
+
+    lastCheckedBox = cb;
+})
