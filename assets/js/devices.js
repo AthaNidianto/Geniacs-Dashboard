@@ -1397,21 +1397,24 @@ async function summonSelectedDevices() {
     }
 }
 
-let lastCheckedBox = null;
+// ---------------------------------------------------------------------------
+// SHIFT+KLIK: pilih rentang checkbox
+// ---------------------------------------------------------------------------
+let lastCheckedValue = null; // simpan ID device, bukan elemen (elemen hilang saat tabel dirender ulang)
 
-document.addEventListener('click', function(e) {
-
+document.addEventListener('click', function (e) {
     const cb = e.target;
-    if (!cb.classList || cb.classList.contains('device-checkbox')) return;
+    if (!cb || !cb.classList || !cb.classList.contains('device-checkbox')) return;
 
-    if (e.shiftKey && lastCheckedBox && lastCheckedBox !== cb && document.body.contains(lastCheckedBox)) {
-        const boxes = Array.from(document.querySelectorAll('.device-checkbox'));
-        const start = boxes.indexOf(lastCheckedBox);
-        const end = boxes.indexOf(cb);
+    const boxes = Array.from(document.querySelectorAll('.device-checkbox'));
 
-        if (start !== -1 && end !== -1) {
-            const from = Math.min(start, end);
-            const to = Math.max(start, end);
+    if (e.shiftKey && lastCheckedValue !== null) {
+        const a = boxes.findIndex(b => b.value === lastCheckedValue);
+        const b = boxes.indexOf(cb);
+
+        if (a !== -1 && b !== -1) {
+            const from = Math.min(a, b);
+            const to = Math.max(a, b);
             for (let i = from; i <= to; i++) {
                 boxes[i].checked = cb.checked;
             }
@@ -1419,5 +1422,5 @@ document.addEventListener('click', function(e) {
         }
     }
 
-    lastCheckedBox = cb;
-})
+    lastCheckedValue = cb.value;
+});
