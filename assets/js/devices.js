@@ -49,7 +49,7 @@ async function loadDevices(isAutoRefresh = false) {
     // Progressive loading: Load devices in chunks
     allDevices = [];
     let skip = 0;
-    const chunkSize = 100;
+    const chunkSize = 500;
     let hasMore = true;
 
     try {
