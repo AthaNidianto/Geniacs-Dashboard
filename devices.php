@@ -56,6 +56,16 @@ include __DIR__ . '/views/layouts/header.php';
                             </select>
                         </div>
 
+                        <!-- Filter Dropdown Redaman -->
+                        <div class="me-3">
+                            <select class="form-select form-select-sm" id="rxFilter" onchange="filterByRx(this.value)" style="min-width: 150px;">
+                                <option value="all">Semua Redaman</option>
+                                <option value="bagus">Bagus</option>
+                                <option value="warning">Warning</option>
+                                <option value="kritis">Kritis</option>
+                            </select>
+                        </div>
+
                         <button class="btn btn-sm btn-info text-white me-2 btn-primary" onclick="syncRbTags()" title="Auto-tag device baru berdasarkan IP">
                             <i class="bi bi-magic"></i> Sync Tags
                         </button>
