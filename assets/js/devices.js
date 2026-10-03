@@ -1185,7 +1185,7 @@ function getRbFilteredDevices() {
     const rbFilter = rbElement ? rbElement.value.toLowerCase() : 'all';
     if (rbFilter === 'all') return allDevices;
 
-    const prefixMap = { '56c': '10.123.', 'klaling': '10.124.', 'sosok': '10.125.' };
+    const prefixMap = { '56c': '10.123.', 'klaling': '10.124.', 'sosok': '10.125.', 'payaman': '10.126.' };
     const prefix = prefixMap[rbFilter];
     if (!prefix) return [];
 
