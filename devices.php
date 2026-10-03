@@ -53,7 +53,6 @@ include __DIR__ . '/views/layouts/header.php';
                                 <option value="56c">RB 56c</option>
                                 <option value="klaling">RB Klaling</option>
                                 <option value="sosok">RB Sosok</option>
-                                <option value="takjil">RB Payaman</option>
                             </select>
                         </div>
 
@@ -92,7 +91,7 @@ include __DIR__ . '/views/layouts/header.php';
 
             </ul>
             <!-- Search Box and Pagination Controls -->
-            <div class="row mb-3">
+            <div class="row mb-3 devices-toolbar">
                 <div class="col-md-4">
                     <div class="input-group">
                         <span class="input-group-text">
@@ -179,7 +178,23 @@ include __DIR__ . '/views/layouts/header.php';
     // Global configuration
     window.GENIEACS_CONFIGURED = <?php echo $genieacsConfigured ? 'true' : 'false'; ?>;
 </script>
-<script src="/assets/js/devices/devices-state.js?v=<?php echo filemtime(__DIR__ . '/assets/js/devices/devices-state.js'); ?>"></script>
+<style>
+    /* Baris search + show per page melayang saat tabel di-scroll */
+    .devices-toolbar {
+        position: sticky;
+        top: 0;                      /* naikkan kalau ada navbar tetap di atas, mis. 56px */
+        z-index: 100;
+        background: #fff;
+        margin-left: 0;
+        margin-right: 0;
+        padding: 10px 0;
+        border-bottom: 1px solid #e9ecef;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+    }
+    /* Supaya sticky tidak terblokir overflow card */
+    .card, .card-body { overflow: visible; }
+</style>
+<script src="/assets/js/devices/devices-state.js"></script>
 <script src="/assets/js/devices.js?v=<?php echo filemtime(__DIR__ . '/assets/js/devices.js'); ?>"></script>
 
 <?php include __DIR__ . '/views/layouts/footer.php'; ?>
