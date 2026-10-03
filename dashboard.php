@@ -20,7 +20,7 @@ include __DIR__ . '/views/layouts/header.php';
 <?php else: ?>
     <!-- Stats Cards -->
     <div class="stats-grid" id="stats-container">
-        <a href="/devices.php" class="stat-card primary" style="text-decoration: none; color: inherit; cursor: pointer;">
+        <a class="stat-card primary" style="text-decoration: none; color: inherit; cursor: pointer;" onclick="window.location.href='/devices.php'">
             <div class="stat-info">
                 <h3 id="stat-total">-</h3>
                 <p>Total Devices</p>
@@ -30,7 +30,7 @@ include __DIR__ . '/views/layouts/header.php';
             </div>
         </a>
 
-        <a href="/devices.php" class="stat-card success" style="text-decoration: none; color: inherit; cursor: pointer;">
+        <a class="stat-card success" style="text-decoration: none; color: inherit; cursor: pointer;" onclick="window.location.href='/devices.php?status=online'">
             <div class="stat-info">
                 <h3 id="stat-online">-</h3>
                 <p>Online</p>
@@ -40,7 +40,7 @@ include __DIR__ . '/views/layouts/header.php';
             </div>
         </a>
 
-        <a href="/devices.php" class="stat-card danger" style="text-decoration: none; color: inherit; cursor: pointer;">
+        <a class="stat-card danger" style="text-decoration: none; color: inherit; cursor: pointer;" onclick="window.location.href='/devices.php?status=offline'">
             <div class="stat-info">
                 <h3 id="stat-offline">-</h3>
                 <p>Offline</p>

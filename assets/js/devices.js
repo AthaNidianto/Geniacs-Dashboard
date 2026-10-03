@@ -1131,6 +1131,11 @@ async function confirmBulkDelete() {
 // ---------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', function() {
 
+    const statusParam = new URLSearchParams(window.location.search).get('status');
+    if (statusParam === 'online' || statusParam === 'offline') {
+        currentStatusFilter = statusParam;
+    }
+
     if (window.GENIEACS_CONFIGURED) loadDevices(); // Initial load (manual)
 
     // Start auto-refresh timer
