@@ -478,9 +478,9 @@ function updateDeviceStats(devices, showStats = true) {
         const ring = active ? `box-shadow: 0 0 0 2px #fff, 0 0 0 4px ${color};` : '';
         const op = dimmed ? '0.4' : '1';
         return `<span class="badge ${cls}" title="${title}" onclick="${onclick}"
-            style="display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box;
+            style="display:inline-flex; align-items:center; justify-content:center;
                    width:108px; height:28px; padding:0 8px; font-family:inherit; font-size:11px; font-weight:600;
-                   line-height:1; letter-spacing:0.3px; white-space:nowrap; cursor:pointer;
+                   letter-spacing:0.3px; white-space:nowrap; cursor:pointer;
                    opacity:${op}; ${ring} transition:0.2s;">${label} [${count}]</span>`;
     };
 
@@ -1225,11 +1225,12 @@ function applyRbFilter(keepPage = false) {
         devicesToRender = devicesToRender.filter(device => {
             const serialNumber = (device.serial_number || '').toLowerCase();
             const macAddress = (device.mac_address || '').toLowerCase();
+            const pppoe_username = (device.pppoe_username || '').toLowerCase();
             let tagsMatch = false;
             if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
                 tagsMatch = device.tags.some(tag => tag.toLowerCase().includes(searchTerm));
             }
-            return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || tagsMatch;
+            return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || pppoe_username.includes(searchTerm) || tagsMatch;
         });
     }
 
@@ -1265,8 +1266,11 @@ async function syncRbTags() {
     const rbMapping = {
         'RB_56c': { prefix: '10.123.', ids: [] },
         'RB_Klaling': { prefix: '10.124.', ids: [] },
-        'RB_Sosok': { prefix: '10.125.', ids: [] }
+        'RB_Sosok': { prefix: '10.125.', ids: [] },
+        'RB_Payaman': { prefix: '10.126.', ids: [] } 
     };
+
+
 
     // Scan semua perangkat
     allDevices.forEach(device => {
@@ -1285,6 +1289,8 @@ async function syncRbTags() {
                 rbMapping['RB_Klaling'].ids.push(device.device_id);
             } else if (ip.startsWith(rbMapping['RB_Sosok'].prefix)) {
                 rbMapping['RB_Sosok'].ids.push(device.device_id);
+            } else if (ip.startsWith(rbMapping['RB_Payaman'].prefix)) {
+                rbMapping['RB_Payaman'].ids.push(device.device_id);
             }
         }
     });
