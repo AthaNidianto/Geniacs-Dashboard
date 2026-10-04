@@ -8,7 +8,7 @@
 let currentStatusFilter = 'all'; // Filter status aktif: all | online | offline
 let bulkBusy = false;            // true selama bulk action jalan (auto-refresh di-pause)
 let currentRxFilter = 'all';     // Filter redaman aktif: all | bagus | warning | kritis
-let currentFilterType = 'all'    // Filter type aktif: onu | pon
+let currentBrandFilter = 'all';  // Filter merek aktif: all | huawei | zte | fiberhome | lainnya
 
 // Kelompok redaman (threshold sama dengan warna badge Rx di tabel):
 //  bagus   : -15.00 s/d -24.99 dBm (hijau)
