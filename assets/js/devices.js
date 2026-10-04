@@ -8,6 +8,7 @@
 let currentStatusFilter = 'all'; // Filter status aktif: all | online | offline
 let bulkBusy = false;            // true selama bulk action jalan (auto-refresh di-pause)
 let currentRxFilter = 'all';     // Filter redaman aktif: all | bagus | warning | kritis
+let currentFilterType = 'all'    // Filter type aktif: onu | pon
 
 // Kelompok redaman (threshold sama dengan warna badge Rx di tabel):
 //  bagus   : -15.00 s/d -24.99 dBm (hijau)
@@ -22,6 +23,48 @@ function getRxCategory(device) {
     if (rx > -25.00) return 'bagus';
     if (rx >= -28.00) return 'warning';
     return 'kritis';
+}
+
+// / Kunci merek dari field manufacturer GenieACS.
+// "Huawei Technologies Co., Ltd" dan "HUAWEI" sama-sama jadi "huawei"; "ZTE Corporation" jadi "zte".
+function getBrandKey(device) {
+    const m = (device.manufacturer || '').trim();
+    if (!m || m === 'N/A') return 'lainnya';
+    return m.split(/[\s,]+/)[0].toLowerCase();
+}
+
+function formatBrandLabel(key) {
+    if (key === 'lainnya') return 'Lainnya';
+    // Singkatan pendek (ZTE) huruf besar semua, lainnya kapital di huruf pertama (Huawei)
+    return key.length <= 4 ? key.toUpperCase() : key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+// Isi dropdown merek. Daftar merek dari seluruh data; angka mengikuti RB yang dipilih.
+function updateBrandOptions(rbFilteredDevices) {
+    const select = document.getElementById('brandFilter');
+    if (!select) return;
+
+    const counts = {};
+    allDevices.forEach(d => { counts[getBrandKey(d)] = 0; });
+    rbFilteredDevices.forEach(d => { counts[getBrandKey(d)]++; });
+
+    const keys = Object.keys(counts).sort((a, b) => {
+        if (a === 'lainnya') return 1;   // "Lainnya" selalu paling bawah
+        if (b === 'lainnya') return -1;
+        return a.localeCompare(b);
+    });
+
+    select.innerHTML =
+        '<option value="all">Semua Merek</option>' +
+        keys.map(k => `<option value="${k}">${formatBrandLabel(k)} (${counts[k]})</option>`).join('');
+
+    // Kembalikan pilihan user setelah opsi dibangun ulang
+    select.value = (currentBrandFilter === 'all' || counts[currentBrandFilter] !== undefined) ? currentBrandFilter : 'all';
+}
+
+function filterByBrand(value) {
+    currentBrandFilter = value;
+    applyRbFilter();
 }
 
 // ---------------------------------------------------------------------------
@@ -478,6 +521,7 @@ function updateDeviceStats(devices, showStats = true) {
         rxSelect.querySelector('option[value="bagus"]').textContent   = `Bagus (${rx.bagus})`;
         rxSelect.querySelector('option[value="warning"]').textContent = `Warning (${rx.warning})`;
         rxSelect.querySelector('option[value="kritis"]').textContent  = `Kritis (${rx.kritis})`;
+        updateBrandOptions(devices);
     }
 
     // Badge status: ukuran seragam, yang aktif penuh, yang lain redup (tanpa ring/border)
@@ -1216,6 +1260,10 @@ function applyRbFilter(keepPage = false) {
     // 2b. Filter redaman
     if (currentRxFilter !== 'all') {
         devicesToRender = devicesToRender.filter(device => getRxCategory(device) === currentRxFilter);
+    }
+    // 2c. Filter merek
+    if (currentBrandFilter !== 'all') {
+        devicesToRender = devicesToRender.filter(device => getBrandKey(device) === currentBrandFilter);
     }
 
     // 3. Filter search
