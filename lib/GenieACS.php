@@ -766,7 +766,7 @@ class GenieACS
 
             $name = $getParam("{$basePath}.Name");
             $externalIP = $getParam("{$basePath}.ExternalIPAddress");
-            $serviceList = $getParam("{$basePath}.X_CT-COM_ServiceList");
+            $serviceList = $getParam("{$basePath}.X_CT-COM_ServiceList") ?? $getParam("{$basePath}.X_HW_SERVICELIST");
             $connectionStatus = $getParam("{$basePath}.ConnectionStatus");
             $lanInterface = $getParam("{$basePath}.X_CT-COM_LanInterface");
 
@@ -797,6 +797,20 @@ class GenieACS
                 }
             }
 
+            // Huawei: binding dari X_HW_LANBIND.LanNEnable / SSIDNEnable
+            if ($bindingInfo === 'N/A' && $getParam("{$basePath}.X_HW_LANBIND.Lan1Enable") !== null) {
+                $hwBind = [];
+                for ($b = 1; $b <= 4; $b++) {
+                    $v = $getParam("{$basePath}.X_HW_LANBIND.Lan{$b}Enable");
+                    if ($v === true || $v === 1 || $v === '1' || $v === 'true') { $hwBind[] = "LAN Ethernet {$b}"; }
+                }
+                for ($b = 1; $b <= 8; $b++) {
+                    $v = $getParam("{$basePath}.X_HW_LANBIND.SSID{$b}Enable");
+                    if ($v === true || $v === 1 || $v === '1' || $v === 'true') { $hwBind[] = "WLAN {$b}"; }
+                }
+                $bindingInfo = $hwBind ? implode(', ', $hwBind) : 'Tidak ada';
+            }
+
             // If binding info is still N/A, try to infer from active interfaces
             if ($bindingInfo === 'N/A') {
                 $activeInterfaces = $detectActiveInterfaces();
@@ -825,6 +839,9 @@ class GenieACS
                 $wanDetails[] = [
                     'type' => 'PPPoE',
                     'name' => $name,
+                    'connection_index' => $i,
+                    'service_list' => $serviceList ?? '',
+                    'vlan_id' => $getParam("{$basePath}.X_HW_VLAN") ?? $getParam("{$basePath}.X_CT-COM_VLANID") ?? 'N/A',
                     'status' => $connectionStatus,
                     'connection_type' => $getParam("{$basePath}.ConnectionType") ?? 'N/A',
                     'external_ip' => $externalIP ?? 'N/A',
@@ -852,7 +869,7 @@ class GenieACS
 
             $name = $getParam("{$basePath}.Name");
             $externalIP = $getParam("{$basePath}.ExternalIPAddress");
-            $serviceList = $getParam("{$basePath}.X_CT-COM_ServiceList");
+            $serviceList = $getParam("{$basePath}.X_CT-COM_ServiceList") ?? $getParam("{$basePath}.X_HW_SERVICELIST");
             $connectionStatus = $getParam("{$basePath}.ConnectionStatus");
             $lanInterface = $getParam("{$basePath}.X_CT-COM_LanInterface");
 
@@ -878,6 +895,20 @@ class GenieACS
                 } else {
                     $bindingInfo = $lanInterface;
                 }
+            }
+
+            // Huawei: binding dari X_HW_LANBIND.LanNEnable / SSIDNEnable
+            if ($bindingInfo === 'N/A' && $getParam("{$basePath}.X_HW_LANBIND.Lan1Enable") !== null) {
+                $hwBind = [];
+                for ($b = 1; $b <= 4; $b++) {
+                    $v = $getParam("{$basePath}.X_HW_LANBIND.Lan{$b}Enable");
+                    if ($v === true || $v === 1 || $v === '1' || $v === 'true') { $hwBind[] = "LAN Ethernet {$b}"; }
+                }
+                for ($b = 1; $b <= 8; $b++) {
+                    $v = $getParam("{$basePath}.X_HW_LANBIND.SSID{$b}Enable");
+                    if ($v === true || $v === 1 || $v === '1' || $v === 'true') { $hwBind[] = "WLAN {$b}"; }
+                }
+                $bindingInfo = $hwBind ? implode(', ', $hwBind) : 'Tidak ada';
             }
 
             // If binding info is still N/A, try to infer from active interfaces
@@ -908,6 +939,9 @@ class GenieACS
                 $wanDetails[] = [
                     'type' => 'IP',
                     'name' => $name,
+                    'connection_index' => $i,
+                    'service_list' => $serviceList ?? '',
+                    'vlan_id' => $getParam("{$basePath}.X_HW_VLAN") ?? $getParam("{$basePath}.X_CT-COM_VLANID") ?? 'N/A',
                     'status' => $connectionStatus,
                     'connection_type' => $getParam("{$basePath}.ConnectionType") ?? 'N/A',
                     'external_ip' => $externalIP ?? 'N/A',

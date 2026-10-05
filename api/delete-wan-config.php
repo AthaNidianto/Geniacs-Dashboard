@@ -119,28 +119,26 @@ $genieacs = new GenieACS(
     $genieConfig['password']
 );
 
-// Method 1: Try to delete the object (some devices support deleteObject)
-// Method 2: Fallback to disabling the connection (set Enable to false)
-// Most devices don't support deleteObject for WAN connections, so we'll disable instead
-
-// Disable the connection by setting Enable to false
-$disableParams = [
-    $basePath . '.Enable' => false
+// Hapus instance koneksi lewat TR-069 DeleteObject.
+// Smart Queuing: semua task diantre dulu, hanya task terakhir yang membangunkan ONU,
+// jadi dashboard membalas dalam hitungan detik (tidak menunggu ONU / tidak timeout).
+$tasks = [
+    ['name' => 'deleteObject',  'objectName' => $basePath],
+    ['name' => 'refreshObject', 'objectName' => 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice'],
 ];
+$lastIndex = count($tasks) - 1;
 
-$result = $genieacs->setParameterValues($deviceId, $disableParams);
-
-if ($result['success']) {
-    // Determine task status based on HTTP code
-    $taskStatus = isset($result['http_code']) && $result['http_code'] == 200 ? 'immediate' : 'queued';
-
-    jsonResponse(true, 'WAN connection deleted successfully (disabled)', [
-        'task_status' => $taskStatus,
-        'connection_path' => $basePath,
-        'is_tr069' => $isTR069,
-        'method' => 'disabled', // Most devices don't support true deletion
-        'note' => 'Connection has been disabled. Full deletion may require factory reset.'
-    ]);
-} else {
-    jsonResponse(false, 'Failed to delete WAN connection: ' . ($result['error'] ?? 'Unknown error'));
+foreach ($tasks as $idx => $task) {
+    $res = $genieacs->queueTask($deviceId, $task, $idx === $lastIndex);
+    if (empty($res['success'])) {
+        error_log("[delete-wan] gagal task #{$idx} {$task['name']}: " . json_encode($res));
+        jsonResponse(false, 'Gagal mengirim perintah hapus ke GenieACS: ' . ($res['error'] ?? ('HTTP ' . ($res['http_code'] ?? '?'))));
+    }
 }
+
+jsonResponse(true, 'Perintah hapus WAN dikirim ke ONU. WAN akan hilang setelah ONU merespons (bisa 1-3 menit).', [
+    'task_status'     => 'queued',
+    'connection_path' => $basePath,
+    'is_tr069'        => $isTR069,
+    'method'          => 'deleteObject',
+]);
