@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Add New WAN Connection Configuration
  *
@@ -31,6 +32,7 @@
  */
 
 require_once __DIR__ . '/../config/config.php';
+
 use App\GenieACS;
 
 header('Content-Type: application/json');
@@ -134,12 +136,24 @@ $genieacs = new GenieACS(
     $genieConfig['password']
 );
 
+$tStart = microtime(true);
+
 // Baca instance WAN yang sudah ada di ONU (dari data yang tersimpan di GenieACS)
 $subKey = ($connectionType === 'ppp') ? 'WANPPPConnection' : 'WANIPConnection';
 $devRes = $genieacs->getDevices(['_id' => $deviceId], 1, 0, 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice');
 $wcd = $devRes['data'][0]['InternetGatewayDevice']['WANDevice']['1']['WANConnectionDevice'] ?? [];
 
-$existingIdx = array_values(array_filter(array_keys($wcd), function ($k) { return ctype_digit((string)$k); }));
+error_log(sprintf(
+    '[add-wan] getDevices %.2fs, hasDevice=%s hasConn=%s maxIdx=%d',
+    microtime(true) - $tStart,
+    var_export($hasDevice ?? null, true),
+    var_export($hasConn ?? null, true),
+    $maxIdx ?? -1
+));
+
+$existingIdx = array_values(array_filter(array_keys($wcd), function ($k) {
+    return ctype_digit((string)$k);
+}));
 $maxIdx = $existingIdx ? max(array_map('intval', $existingIdx)) : 0;
 $hasDevice = isset($wcd[(string)$connectionIndex]);
 $hasConn = $hasDevice && isset($wcd[(string)$connectionIndex][$subKey]['1']);
@@ -188,6 +202,15 @@ $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $values];
 $lastIndex = count($tasks) - 1;
 foreach ($tasks as $i => $task) {
     $res = $genieacs->queueTask($deviceId, $task, $i === $lastIndex);
+
+    error_log(sprintf(
+        '[add-wan] task %d (%s) -> http=%s %.2fs note=%s',
+        $i,
+        $task['name'],
+        $res['http_code'] ?? '-',
+        microtime(true) - $tStart,
+        $res['note'] ?? ''
+    ));
     if (!$res['success']) {
         $msg = $res['error'] ?? ('HTTP ' . ($res['http_code'] ?? '?'));
         jsonResponse(false, 'Gagal mengantrikan task WAN: ' . $msg);
