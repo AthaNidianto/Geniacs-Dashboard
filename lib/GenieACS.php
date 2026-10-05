@@ -1,10 +1,12 @@
 <?php
+
 namespace App;
 
 /**
  * GenieACS API Client
  */
-class GenieACS {
+class GenieACS
+{
     private $host;
     private $port;
     private $username;
@@ -17,7 +19,10 @@ class GenieACS {
      * Kalau ada grafik dashboard yang kosong/meleset, tambahkan path yang dibaca endpoint tsb ke sini.
      */
     private const LITE_PROJECTION = [
-        '_id', '_lastInform', '_deviceId', '_tags',
+        '_id',
+        '_lastInform',
+        '_deviceId',
+        '_tags',
         'VirtualParameters.RXPower',
         'VirtualParameters.gettemp',
         'VirtualParameters.Temperature',
@@ -32,7 +37,8 @@ class GenieACS {
         'Device.Hosts.HostNumberOfEntries',
     ];
 
-    public function __construct($host = null, $port = 7557, $username = null, $password = null) {
+    public function __construct($host = null, $port = 7557, $username = null, $password = null)
+    {
         $this->host = $host;
         $this->port = $port;
         $this->username = $username;
@@ -43,7 +49,8 @@ class GenieACS {
     /**
      * Make HTTP request to GenieACS API
      */
-    private function request($endpoint, $method = 'GET', $data = null) {
+    private function request($endpoint, $method = 'GET', $data = null)
+    {
         $url = $this->baseUrl . $endpoint;
 
         $ch = curl_init();
@@ -93,7 +100,8 @@ class GenieACS {
     /**
      * Test connection to GenieACS
      */
-    public function testConnection() {
+    public function testConnection()
+    {
         $result = $this->request('/devices?limit=1');
         return $result['success'];
     }
@@ -106,7 +114,8 @@ class GenieACS {
      * @param array|string|null $projection - Field yang diminta saja (array atau string dipisah koma).
      *                                        Null = dokumen lengkap (perilaku lama).
      */
-    public function getDevices($query = [], $limit = 0, $skip = 0, $projection = null) {
+    public function getDevices($query = [], $limit = 0, $skip = 0, $projection = null)
+    {
         $params = [];
 
         if (!empty($query)) {
@@ -134,14 +143,16 @@ class GenieACS {
      * Versi ringan getDevices() untuk statistik dashboard.
      * Hanya menarik field minimum (lihat LITE_PROJECTION) supaya hemat memori & cepat.
      */
-    public function getDevicesLite($query = [], $limit = 0, $skip = 0) {
+    public function getDevicesLite($query = [], $limit = 0, $skip = 0)
+    {
         return $this->getDevices($query, $limit, $skip, self::LITE_PROJECTION);
     }
 
     /**
      * Get total device count
      */
-    public function getDeviceCount($query = []) {
+    public function getDeviceCount($query = [])
+    {
         $queryString = empty($query) ? '' : '?query=' . urlencode(json_encode($query));
         // Cukup _id saja, kita hanya butuh jumlahnya
         $queryString .= ($queryString === '' ? '?' : '&') . 'projection=_id';
@@ -157,7 +168,8 @@ class GenieACS {
     /**
      * Get device by ID
      */
-    public function getDevice($deviceId) {
+    public function getDevice($deviceId)
+    {
         $query = ['_id' => $deviceId];
         $result = $this->request('/devices/?query=' . urlencode(json_encode($query)));
 
@@ -171,14 +183,16 @@ class GenieACS {
     /**
      * Get device parameters
      */
-    public function getDeviceParameters($deviceId) {
+    public function getDeviceParameters($deviceId)
+    {
         return $this->getDevice($deviceId);
     }
 
     /**
      * Execute task on device
      */
-    public function executeTask($deviceId, $taskName, $params = []) {
+    public function executeTask($deviceId, $taskName, $params = [])
+    {
         $endpoint = "/devices/{$deviceId}/tasks";
         $data = [
             'name' => $taskName
@@ -194,7 +208,8 @@ class GenieACS {
     /**
      * Summon device (connection request)
      */
-    public function summonDevice($deviceId) {
+    public function summonDevice($deviceId)
+    {
         // URL encode device ID to handle special characters
         $encodedId = rawurlencode($deviceId);
         $endpoint = "/devices/{$encodedId}/tasks?connection_request";
@@ -204,7 +219,8 @@ class GenieACS {
     /**
      * Refresh device inform (force device to connect to ACS)
      */
-    public function refreshInform($deviceId) {
+    public function refreshInform($deviceId)
+    {
         $encodedId = rawurlencode($deviceId);
         $endpoint = "/devices/{$encodedId}/tasks?connection_request";
         return $this->request($endpoint, 'POST');
@@ -214,7 +230,8 @@ class GenieACS {
      * Add refresh task for specific parameter
      * This forces GenieACS to fetch the parameter value from device
      */
-    public function addRefreshTask($deviceId, $parameterPath) {
+    public function addRefreshTask($deviceId, $parameterPath)
+    {
         $encodedId = rawurlencode($deviceId);
         $endpoint = "/devices/{$encodedId}/tasks?timeout=3000&connection_request";
 
@@ -235,7 +252,8 @@ class GenieACS {
      * @param int $timeout Timeout in milliseconds (default: 3000)
      * @return array Response with task ID
      */
-    public function getParameterValues($deviceId, $parameterNames, $timeout = 3000) {
+    public function getParameterValues($deviceId, $parameterNames, $timeout = 3000)
+    {
         $encodedId = rawurlencode($deviceId);
         $endpoint = "/devices/{$encodedId}/tasks?timeout={$timeout}&connection_request";
 
@@ -252,7 +270,8 @@ class GenieACS {
      * Return 'tr098' (InternetGatewayDevice), 'tr181' (Device), atau null kalau belum ketahuan.
      * Dipakai supaya task refresh tidak menunjuk path yang tidak ada di modem (fault 9005).
      */
-    private function detectRoot($deviceId) {
+    private function detectRoot($deviceId)
+    {
         $q = urlencode(json_encode(['_id' => $deviceId]));
         $projection = urlencode('InternetGatewayDevice.DeviceInfo.ProductClass,Device.DeviceInfo.ProductClass');
         $res = $this->request("/devices/?query={$q}&projection={$projection}");
@@ -270,7 +289,8 @@ class GenieACS {
      * Task 1 menunggu hasil (timeout=3000) seperti sebelumnya. Task berikutnya disesuaikan
      * dengan model data modem (TR-098 / TR-181).
      */
-    public function summonAndFetchAdminCredentials($deviceId) {
+    public function summonAndFetchAdminCredentials($deviceId)
+    {
         $encodedId = rawurlencode($deviceId);
         $endpoint = "/devices/{$encodedId}/tasks?timeout=3000&connection_request";
 
@@ -307,7 +327,8 @@ class GenieACS {
     /**
      * Reboot device
      */
-    public function rebootDevice($deviceId) {
+    public function rebootDevice($deviceId)
+    {
         return $this->executeTask($deviceId, 'reboot');
     }
 
@@ -325,7 +346,8 @@ class GenieACS {
      *     ['InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.KeyPassphrase', 'NewPassword', 'xsd:string']
      * ];
      */
-    public function setParameterValues($deviceId, $parameters, $timeout = 3000) {
+    public function setParameterValues($deviceId, $parameters, $timeout = 3000)
+    {
         // URL encode device ID to handle special characters
         $encodedId = rawurlencode($deviceId);
         $endpoint = "/devices/{$encodedId}/tasks?timeout={$timeout}&connection_request";
@@ -338,6 +360,15 @@ class GenieACS {
         return $this->request($endpoint, 'POST', $data);
     }
 
+    public function queueTask($deviceId, array $task, $wake = false, $timeoutMs = 3000)
+    {
+        $endpoint = "/devices/" . rawurlencode($deviceId) . "/tasks";
+        if ($wake) {
+            $endpoint .= "?timeout={$timeoutMs}&connection_request";
+        }
+        return $this->request($endpoint, 'POST', $task);
+    }
+
     /**
      * Set WiFi configuration (SSID, Password, and Security Mode)
      *
@@ -348,7 +379,8 @@ class GenieACS {
      * @param string $securityMode Security mode (WPA2PSK, WPAPSK, WPA2PSKWPAPSK, None)
      * @return array Response with success status
      */
-    public function setWiFiConfig($deviceId, $ssid, $password = '', $wlanIndex = 1, $securityMode = 'WPA2PSK') {
+    public function setWiFiConfig($deviceId, $ssid, $password = '', $wlanIndex = 1, $securityMode = 'WPA2PSK')
+    {
         $parameters = [];
 
         // Try multiple parameter paths for different ONU vendors
@@ -406,7 +438,8 @@ class GenieACS {
      * Get device statistics
      * Hanya butuh _lastInform per device, jadi pakai projection (hemat memori).
      */
-    public function getDeviceStats() {
+    public function getDeviceStats()
+    {
         $devices = $this->getDevices([], 0, 0, '_lastInform');
 
         if (!$devices['success']) {
@@ -452,11 +485,12 @@ class GenieACS {
     /**
      * Parse device data for display
      */
-    public function parseDeviceData($device) {
+    public function parseDeviceData($device)
+    {
         $data = [];
 
         // Helper function to get nested parameter value
-        $getParam = function($path) use ($device) {
+        $getParam = function ($path) use ($device) {
             $keys = explode('.', $path);
             $value = $device;
 
@@ -483,10 +517,10 @@ class GenieACS {
 
         // MAC Address - try multiple paths
         $macAddress = $getParam('InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress') ??
-                     $getParam('InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.MACAddress') ??
-                     $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.BSSID') ??
-                     $getParam('Device.Ethernet.Interface.1.MACAddress') ??
-                     $getParam('_deviceId._MACAddress');
+            $getParam('InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.MACAddress') ??
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.BSSID') ??
+            $getParam('Device.Ethernet.Interface.1.MACAddress') ??
+            $getParam('_deviceId._MACAddress');
 
         // If MAC still not found, try to construct from OUI and serial number
         if (empty($macAddress) || $macAddress === 'N/A') {
@@ -500,13 +534,13 @@ class GenieACS {
                 if (ctype_xdigit($lastSixChars)) {
                     // Format OUI properly (F86CE1 -> F8:6C:E1)
                     $ouiFormatted = strtoupper(substr($oui, 0, 2) . ':' .
-                                               substr($oui, 2, 2) . ':' .
-                                               substr($oui, 4, 2));
+                        substr($oui, 2, 2) . ':' .
+                        substr($oui, 4, 2));
 
                     $macAddress = $ouiFormatted . ':' .
-                                 strtoupper(substr($lastSixChars, 0, 2)) . ':' .
-                                 strtoupper(substr($lastSixChars, 2, 2)) . ':' .
-                                 strtoupper(substr($lastSixChars, 4, 2));
+                        strtoupper(substr($lastSixChars, 0, 2)) . ':' .
+                        strtoupper(substr($lastSixChars, 2, 2)) . ':' .
+                        strtoupper(substr($lastSixChars, 4, 2));
                 }
             }
         }
@@ -539,8 +573,8 @@ class GenieACS {
         // Ping/Latency - try to get actual ping from VirtualParameters
         // GenieACS stores ping result in VirtualParameters.Ping
         $ping = $getParam('VirtualParameters.Ping') ??
-                $getParam('VirtualParameters.ping') ??
-                $getParam('VirtualParameters.PingResult');
+            $getParam('VirtualParameters.ping') ??
+            $getParam('VirtualParameters.PingResult');
 
         if ($data['status'] === 'online') {
             // If ping value exists and is numeric, use it
@@ -570,7 +604,7 @@ class GenieACS {
 
         // Network info
         $connectionUrl = $getParam('InternetGatewayDevice.ManagementServer.ConnectionRequestURL') ??
-                        $getParam('Device.ManagementServer.ConnectionRequestURL') ?? 'N/A';
+            $getParam('Device.ManagementServer.ConnectionRequestURL') ?? 'N/A';
 
         $data['ip_tr069'] = $connectionUrl;
 
@@ -586,37 +620,37 @@ class GenieACS {
         // Also try WAN IP if available
         if ($ipAddress === 'N/A') {
             $ipAddress = $getParam('InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress') ??
-                        $getParam('Device.IP.Interface.1.IPv4Address.1.IPAddress') ?? 'N/A';
+                $getParam('Device.IP.Interface.1.IPv4Address.1.IPAddress') ?? 'N/A';
         }
 
         $data['ip_address'] = $ipAddress;
         $data['uptime'] = $getParam('InternetGatewayDevice.DeviceInfo.UpTime') ??
-                         $getParam('Device.DeviceInfo.UpTime') ?? 'N/A';
+            $getParam('Device.DeviceInfo.UpTime') ?? 'N/A';
 
         // WiFi info - try multiple paths and WLAN configurations
         $wifiSsid = $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID') ??
-                   $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.SSID') ??
-                   $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.SSID') ??
-                   $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.SSID') ??
-                   $getParam('Device.WiFi.SSID.1.SSID') ??
-                   $getParam('Device.WiFi.SSID.2.SSID');
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.SSID') ??
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.SSID') ??
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.SSID') ??
+            $getParam('Device.WiFi.SSID.1.SSID') ??
+            $getParam('Device.WiFi.SSID.2.SSID');
 
         $data['wifi_ssid'] = $wifiSsid ?? 'N/A';
 
         $wifiPassword = $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.PreSharedKey.1.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.KeyPassphrase') ??
-                       $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.KeyPassphrase') ??
-                       $getParam('Device.WiFi.AccessPoint.1.Security.KeyPassphrase') ??
-                       $getParam('Device.WiFi.AccessPoint.2.Security.KeyPassphrase');
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.PreSharedKey.1.KeyPassphrase') ??
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.KeyPassphrase') ??
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.KeyPassphrase') ??
+            $getParam('InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.KeyPassphrase') ??
+            $getParam('Device.WiFi.AccessPoint.1.Security.KeyPassphrase') ??
+            $getParam('Device.WiFi.AccessPoint.2.Security.KeyPassphrase');
 
         $data['wifi_password'] = $wifiPassword ?? 'N/A';
 
         // Optical info
         $rxPower = $getParam('VirtualParameters.RXPower') ??
-                   $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.RXPower') ??
-                   $getParam('Device.Optical.Interface.1.RxPower');
+            $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.RXPower') ??
+            $getParam('Device.Optical.Interface.1.RxPower');
 
         // Convert raw value to dBm if needed
         if ($rxPower !== null && is_numeric($rxPower)) {
@@ -631,9 +665,9 @@ class GenieACS {
 
         // Temperature
         $temperature = $getParam('VirtualParameters.gettemp') ??
-                      $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.TransceiverTemperature') ??
-                      $getParam('VirtualParameters.Temperature') ??
-                      $getParam('InternetGatewayDevice.DeviceInfo.Temperature');
+            $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.TransceiverTemperature') ??
+            $getParam('VirtualParameters.Temperature') ??
+            $getParam('InternetGatewayDevice.DeviceInfo.Temperature');
 
         // Convert raw value if needed (> 1000 indicates raw format)
         if ($temperature !== null && is_numeric($temperature)) {
@@ -650,7 +684,7 @@ class GenieACS {
         $wanDetails = [];
 
         // Helper function to check if WAN connection exists
-        $checkWANExists = function($path) use ($device) {
+        $checkWANExists = function ($path) use ($device) {
             $keys = explode('.', $path);
             $value = $device;
 
@@ -665,8 +699,10 @@ class GenieACS {
             // Check if this is an actual connection object (has _object or parameters)
             if (is_array($value)) {
                 // If it has _object field and it's true, or has connection parameters
-                if (isset($value['_object']) || isset($value['ConnectionStatus']) ||
-                    isset($value['Enable']) || isset($value['Name'])) {
+                if (
+                    isset($value['_object']) || isset($value['ConnectionStatus']) ||
+                    isset($value['Enable']) || isset($value['Name'])
+                ) {
                     return true;
                 }
             }
@@ -675,7 +711,7 @@ class GenieACS {
         };
 
         // Helper function to detect active WLAN/LAN interfaces
-        $detectActiveInterfaces = function() use ($getParam) {
+        $detectActiveInterfaces = function () use ($getParam) {
             $activeInterfaces = [];
 
             // Check WLAN configurations (1-4)
@@ -1102,7 +1138,8 @@ class GenieACS {
      * yang menunjuk path yang tidak ada (fault 9005 yang nyangkut di antrean).
      * Cakupan: VirtualParameters (admin), WLAN (SSID), Hosts (Client).
      */
-    public function bulkSummonFast($deviceId) {
+    public function bulkSummonFast($deviceId)
+    {
         $encodedId = rawurlencode($deviceId);
         $root = $this->detectRoot($deviceId);
 
@@ -1151,13 +1188,20 @@ class GenieACS {
      * @param int   $concurrency Jumlah koneksi paralel ke NBI GenieACS
      * @return array ['success','total','success_count','fail_count','tasks_ok','tasks_failed']
      */
-    public function bulkSummonParallel(array $deviceIds, int $concurrency = 40) {
+    public function bulkSummonParallel(array $deviceIds, int $concurrency = 40)
+    {
         $deviceIds = array_values(array_unique(array_filter($deviceIds, 'strlen')));
         $total = count($deviceIds);
 
         if ($total === 0) {
-            return ['success' => true, 'total' => 0, 'success_count' => 0, 'fail_count' => 0,
-                    'tasks_ok' => 0, 'tasks_failed' => 0];
+            return [
+                'success' => true,
+                'total' => 0,
+                'success_count' => 0,
+                'fail_count' => 0,
+                'tasks_ok' => 0,
+                'tasks_failed' => 0
+            ];
         }
 
         // 1) Satu GET kecil: root data model semua device (hanya ProductClass, ukurannya kecil)
@@ -1225,7 +1269,8 @@ class GenieACS {
      * @param array $failedDevices  (by reference) diisi deviceId yang ada task gagal
      * @return int  Jumlah task yang sukses (HTTP 2xx)
      */
-    private function postMulti(array $jobs, bool $connectionReq, int $concurrency, array &$failedDevices) {
+    private function postMulti(array $jobs, bool $connectionReq, int $concurrency, array &$failedDevices)
+    {
         $total = count($jobs);
         if ($total === 0) return 0;
 

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Add New WAN Connection Configuration
  *
@@ -31,6 +32,7 @@
  */
 
 require_once __DIR__ . '/../config/config.php';
+
 use App\GenieACS;
 
 header('Content-Type: application/json');
@@ -134,30 +136,91 @@ $genieacs = new GenieACS(
     $genieConfig['password']
 );
 
-// First, try to create the WAN connection object (addObject)
-// Some devices may require object creation first
-$addObjectPath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$connectionIndex}";
-if ($connectionType === 'ppp') {
-    $addObjectPath .= ".WANPPPConnection";
-} else {
-    $addObjectPath .= ".WANIPConnection";
+$tStart = microtime(true);
+
+// Baca instance WAN yang sudah ada di ONU (dari data yang tersimpan di GenieACS)
+$subKey = ($connectionType === 'ppp') ? 'WANPPPConnection' : 'WANIPConnection';
+$devRes = $genieacs->getDevices(['_id' => $deviceId], 1, 0, 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice');
+$wcd = $devRes['data'][0]['InternetGatewayDevice']['WANDevice']['1']['WANConnectionDevice'] ?? [];
+
+error_log(sprintf(
+    '[add-wan] getDevices %.2fs, hasDevice=%s hasConn=%s maxIdx=%d',
+    microtime(true) - $tStart,
+    var_export($hasDevice ?? null, true),
+    var_export($hasConn ?? null, true),
+    $maxIdx ?? -1
+));
+
+$existingIdx = array_values(array_filter(array_keys($wcd), function ($k) {
+    return ctype_digit((string)$k);
+}));
+$maxIdx = $existingIdx ? max(array_map('intval', $existingIdx)) : 0;
+$hasDevice = isset($wcd[(string)$connectionIndex]);
+$hasConn = $hasDevice && isset($wcd[(string)$connectionIndex][$subKey]['1']);
+
+// ONU yang menentukan nomor instance baru (selalu nomor berikutnya), jadi index harus pas
+if (!$hasDevice && $connectionIndex !== $maxIdx + 1) {
+    jsonResponse(false, 'Index tidak valid. Untuk WAN baru gunakan index ' . ($maxIdx + 1) . '.');
 }
 
-// Note: GenieACS uses setParameterValues for both creation and update
-// The device will handle object creation if it doesn't exist
-$result = $genieacs->setParameterValues($deviceId, $genieParams);
+// Susun daftar task
+$tasks = [];
 
-if ($result['success']) {
-    // Determine task status based on HTTP code
-    $taskStatus = isset($result['http_code']) && $result['http_code'] == 200 ? 'immediate' : 'queued';
-
-    jsonResponse(true, 'New WAN connection created successfully', [
-        'task_status' => $taskStatus,
-        'connection_index' => $connectionIndex,
-        'connection_type' => $connectionType,
-        'parameters_set' => count($genieParams),
-        'connection_path' => $basePath
-    ]);
-} else {
-    jsonResponse(false, 'Failed to create WAN connection: ' . ($result['error'] ?? 'Unknown error'));
+if (!$hasDevice) {
+    $tasks[] = [
+        'name' => 'addObject',
+        'objectName' => 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice'
+    ];
 }
+if (!$hasConn) {
+    $tasks[] = [
+        'name' => 'addObject',
+        'objectName' => "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$connectionIndex}.{$subKey}"
+    ];
+}
+
+// Format yang benar: [[path, value, type], ...]
+$boolParams = ['Enable', 'NATEnabled'];
+$uintParams = ['X_CT-COM_VLANID'];
+$values = [];
+foreach ($genieParams as $fullPath => $val) {
+    $leaf = substr($fullPath, strrpos($fullPath, '.') + 1);
+    if (in_array($leaf, $boolParams, true)) {
+        $type = 'xsd:boolean';
+        $val = filter_var($val, FILTER_VALIDATE_BOOLEAN);
+    } elseif (in_array($leaf, $uintParams, true)) {
+        $type = 'xsd:unsignedInt';
+        $val = intval($val);
+    } else {
+        $type = 'xsd:string';
+    }
+    $values[] = [$fullPath, $val, $type];
+}
+$tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $values];
+
+// Smart Queuing: semua task masuk antrean tanpa menunggu, hanya task terakhir yang membangunkan ONU
+$lastIndex = count($tasks) - 1;
+foreach ($tasks as $i => $task) {
+    $res = $genieacs->queueTask($deviceId, $task, $i === $lastIndex);
+
+    error_log(sprintf(
+        '[add-wan] task %d (%s) -> http=%s %.2fs note=%s',
+        $i,
+        $task['name'],
+        $res['http_code'] ?? '-',
+        microtime(true) - $tStart,
+        $res['note'] ?? ''
+    ));
+    if (!$res['success']) {
+        $msg = $res['error'] ?? ('HTTP ' . ($res['http_code'] ?? '?'));
+        jsonResponse(false, 'Gagal mengantrikan task WAN: ' . $msg);
+    }
+}
+
+jsonResponse(true, 'Perintah WAN dikirim ke ONU. Data akan muncul setelah ONU memproses (sekitar 1 menit).', [
+    'task_status' => 'queued',
+    'connection_index' => $connectionIndex,
+    'connection_type' => $connectionType,
+    'tasks_queued' => count($tasks),
+    'connection_path' => $basePath
+]);
