@@ -360,52 +360,15 @@ class GenieACS
         return $this->request($endpoint, 'POST', $data);
     }
 
-    /**
-     * Antrikan satu task ke ONU.
-     * Kalau $wake = true, GenieACS juga membangunkan ONU (connection request). PHP hanya menunggu
-     * maksimal $maxWaitSec detik; kalau lewat, task tetap aman di antrean GenieACS dan akan
-     * dijalankan saat ONU terhubung, jadi dianggap berhasil.
-     */
-    public function queueTask($deviceId, array $task, $wake = false, $timeoutMs = 3000, $maxWaitSec = 5)
+    public function queueTask($deviceId, array $task, $wake = false, $timeoutMs = 3000)
     {
         $endpoint = "/devices/" . rawurlencode($deviceId) . "/tasks";
         if ($wake) {
             $endpoint .= "?timeout={$timeoutMs}&connection_request";
         }
-
-        $ch = curl_init($this->baseUrl . $endpoint);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($task),
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT => $wake ? $maxWaitSec : 15,
-        ]);
-        if ($this->username && $this->password) {
-            curl_setopt($ch, CURLOPT_USERPWD, "{$this->username}:{$this->password}");
-        }
-
-        $response = curl_exec($ch);
-        $errno = curl_errno($ch);
-        $error = curl_error($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        // Timeout saat membangunkan ONU: task sudah tersimpan, ONU hanya belum menjawab
-        if ($wake && $errno === CURLE_OPERATION_TIMEDOUT) {
-            return ['success' => true, 'http_code' => 202, 'note' => 'wake_timeout'];
-        }
-        if ($errno) {
-            return ['success' => false, 'error' => $error];
-        }
-
-        return [
-            'success' => $httpCode >= 200 && $httpCode < 300,
-            'data' => json_decode($response, true),
-            'http_code' => $httpCode
-        ];
+        return $this->request($endpoint, 'POST', $task);
     }
+
     /**
      * Set WiFi configuration (SSID, Password, and Security Mode)
      *
