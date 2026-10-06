@@ -86,13 +86,10 @@
                         <label for="edit-wlan-index" class="form-label">
                             <i class="bi bi-router"></i> WLAN Interface
                         </label>
-                        <select class="form-select" id="edit-wlan-index" name="wlan_index">
-                            <option value="1" selected>WLAN 1 (2.4GHz - Default)</option>
-                            <option value="2">WLAN 2 (5GHz)</option>
-                            <option value="3">WLAN 3</option>
-                            <option value="4">WLAN 4</option>
+                        <select class="form-select" id="edit-wlan-index" name="wlan_index" onchange="onEditWlanChange()">
+                            <option value="1" selected>WLAN 1</option>
                         </select>
-                        <div class="form-text">Pilih interface WLAN yang ingin diubah</div>
+                        <div class="form-text">Hanya WLAN yang aktif di ONU ini yang ditampilkan (2.4GHz / 5GHz)</div>
                     </div>
                 </form>
             </div>

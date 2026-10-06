@@ -647,6 +647,93 @@ class GenieACS
 
         $data['wifi_password'] = $wifiPassword ?? 'N/A';
 
+        // ---- Daftar jaringan WiFi (2.4GHz / 5GHz) yang aktif ----
+        // Hanya WLAN yang ada SSID-nya dan Enable = true yang ditampilkan.
+        $wifiNetworks = [];
+        $beaconToMode = [
+            '11i' => 'WPA2PSK',
+            'WPA' => 'WPAPSK',
+            'WPAand11i' => 'WPA2PSKWPAPSK',
+            'Basic' => 'None',
+            'None' => 'None',
+        ];
+        $isTruthy = function ($v) {
+            return $v === true || $v === 1 || $v === '1' || (is_string($v) && strtolower($v) === 'true');
+        };
+        $firstNonEmpty = function (array $paths) use ($getParam) {
+            foreach ($paths as $p) {
+                $v = $getParam($p);
+                if ($v !== null && is_string($v) && trim($v) !== '') {
+                    return $v;
+                }
+            }
+            return null;
+        };
+
+        for ($w = 1; $w <= 8; $w++) {
+            $base = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$w}";
+            $ssid = $getParam("{$base}.SSID");
+            if ($ssid === null || trim((string)$ssid) === '') {
+                continue;
+            }
+            $enableRaw = $getParam("{$base}.Enable");
+            $enabled = ($enableRaw === null) ? true : $isTruthy($enableRaw);
+
+            $band = $getParam("{$base}.OperatingFrequencyBand");
+            if (!$band) {
+                $band = ($w >= 5) ? '5GHz' : '2.4GHz';
+            }
+            $beacon = $getParam("{$base}.BeaconType");
+            $pass = $firstNonEmpty([
+                "{$base}.PreSharedKey.1.KeyPassphrase",
+                "{$base}.KeyPassphrase",
+                "{$base}.PreSharedKey.1.PreSharedKey",
+            ]);
+
+            $wifiNetworks[] = [
+                'index' => $w,
+                'ssid' => (string)$ssid,
+                'password' => $pass ?? '',
+                'band' => (string)$band,
+                'enabled' => $enabled,
+                'security_mode' => $beaconToMode[$beacon] ?? 'WPA2PSK',
+            ];
+        }
+
+        // TR-181 (Device.WiFi) kalau tidak ada TR-098
+        if (empty($wifiNetworks)) {
+            for ($w = 1; $w <= 8; $w++) {
+                $ssid = $getParam("Device.WiFi.SSID.{$w}.SSID");
+                if ($ssid === null || trim((string)$ssid) === '') {
+                    continue;
+                }
+                $enableRaw = $getParam("Device.WiFi.SSID.{$w}.Enable");
+                $pass = $firstNonEmpty(["Device.WiFi.AccessPoint.{$w}.Security.KeyPassphrase"]);
+                $wifiNetworks[] = [
+                    'index' => $w,
+                    'ssid' => (string)$ssid,
+                    'password' => $pass ?? '',
+                    'band' => ($w >= 5) ? '5GHz' : '2.4GHz',
+                    'enabled' => ($enableRaw === null) ? true : $isTruthy($enableRaw),
+                    'security_mode' => 'WPA2PSK',
+                ];
+            }
+        }
+
+        // Sembunyikan WLAN yang nonaktif (tidak bisa dipakai); kalau semuanya nonaktif, tampilkan semua
+        $activeNetworks = array_values(array_filter($wifiNetworks, function ($n) {
+            return $n['enabled'];
+        }));
+        $data['wifi_networks'] = !empty($activeNetworks) ? $activeNetworks : $wifiNetworks;
+
+        // Kompatibilitas: wifi_ssid / wifi_password = jaringan pertama yang aktif
+        if (!empty($data['wifi_networks'])) {
+            $data['wifi_ssid'] = $data['wifi_networks'][0]['ssid'];
+            if ($data['wifi_networks'][0]['password'] !== '') {
+                $data['wifi_password'] = $data['wifi_networks'][0]['password'];
+            }
+        }
+
         // Optical info
         $rxPower = $getParam('VirtualParameters.RXPower') ??
             $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.RXPower') ??

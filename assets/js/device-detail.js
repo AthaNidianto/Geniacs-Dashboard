@@ -149,25 +149,7 @@ async function loadDeviceDetail(isAutoRefresh = false) {
                             <th width="20%">IP TR069</th>
                             <td>${makeIPClickable(extractIP(device.ip_tr069))}</td>
                         </tr>
-                        <tr>
-                            <th>WiFi SSID</th>
-                            <td>
-                                ${device.wifi_ssid}
-                                <button class="btn btn-sm btn-warning ms-2" onclick="openEditWiFiModal('${device.device_id}', '${device.wifi_ssid.replace(/'/g, "\\'")}', '${device.wifi_password.replace(/'/g, "\\'")}')">
-                                    <i class="bi bi-pencil"></i> Edit WiFi
-                                </button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th>WiFi Password</th>
-                            <td>
-                                <span id="wifi-pass-hidden">********</span>
-                                <span id="wifi-pass-shown" style="display:none;">${device.wifi_password}</span>
-                                <button class="btn btn-sm btn-link" onclick="togglePassword()">
-                                    <i id="toggle-icon" class="bi bi-eye"></i>
-                                </button>
-                            </td>
-                        </tr>
+                        ${renderWifiRows(device)}
                         <tr>
                             <th>Full TR069 URL</th>
                             <td><small>${device.ip_tr069}</small></td>
@@ -1448,14 +1430,124 @@ async function confirmSummon() {
     }
 }
 
-function openEditWiFiModal(deviceId, currentSsid, currentPassword) {
-    // Set form values
-    document.getElementById('edit-device-id').value = deviceId;
-    document.getElementById('edit-wifi-ssid').value = currentSsid;
-    // Password lama sering tidak terbaca dari ONU (kosong / N/A): jangan diisi paksa
-    document.getElementById('edit-wifi-password').value =
-        (currentPassword && currentPassword !== 'N/A') ? currentPassword : '';
-    document.getElementById('edit-wlan-index').value = '1'; // Default to WLAN 1
+// ---- WiFi: daftar jaringan aktif (2.4GHz / 5GHz) dari ONU ----
+let currentWifiNetworks = [];
+let currentWifiDeviceId = '';
+
+function escHtmlWifi(s) {
+    return String(s === null || s === undefined ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Baris "WiFi SSID" + "WiFi Password" untuk tiap jaringan aktif
+function renderWifiRows(device) {
+    const nets = Array.isArray(device.wifi_networks) ? device.wifi_networks : [];
+    currentWifiNetworks = nets;
+    currentWifiDeviceId = device.device_id;
+
+    // Fallback: ONU yang datanya tidak punya daftar jaringan
+    if (nets.length === 0) {
+        const ssid = device.wifi_ssid || 'N/A';
+        const pass = (device.wifi_password && device.wifi_password !== 'N/A') ? device.wifi_password : '';
+        return `
+            <tr>
+                <th>WiFi SSID</th>
+                <td>${escHtmlWifi(ssid)}
+                    <button class="btn btn-sm btn-warning ms-2" onclick="openEditWiFiModal(1)">
+                        <i class="bi bi-pencil"></i> Edit WiFi
+                    </button>
+                </td>
+            </tr>
+            <tr>
+                <th>WiFi Password</th>
+                <td>${pass ? escHtmlWifi(pass) : '<span class="text-muted">Tidak terbaca dari ONU</span>'}</td>
+            </tr>`;
+    }
+
+    return nets.map(n => {
+        const label = `${escHtmlWifi(n.band)} · WLAN ${n.index}`;
+        const hasPass = n.password && n.password !== '';
+        return `
+            <tr>
+                <th>WiFi SSID<br><small class="text-muted fw-normal">${label}</small></th>
+                <td>
+                    ${escHtmlWifi(n.ssid)}
+                    <button class="btn btn-sm btn-warning ms-2" onclick="openEditWiFiModal(${n.index})">
+                        <i class="bi bi-pencil"></i> Edit WiFi
+                    </button>
+                </td>
+            </tr>
+            <tr>
+                <th>WiFi Password<br><small class="text-muted fw-normal">${label}</small></th>
+                <td>
+                    ${hasPass ? `
+                        <span id="wifi-pass-hidden-${n.index}">********</span>
+                        <span id="wifi-pass-shown-${n.index}" style="display:none;">${escHtmlWifi(n.password)}</span>
+                        <button class="btn btn-sm btn-link" onclick="toggleWifiPassword(${n.index})">
+                            <i id="wifi-toggle-icon-${n.index}" class="bi bi-eye"></i>
+                        </button>` : '<span class="text-muted">Tidak terbaca dari ONU</span>'}
+                </td>
+            </tr>`;
+    }).join('');
+}
+
+function toggleWifiPassword(index) {
+    const hidden = document.getElementById('wifi-pass-hidden-' + index);
+    const shown = document.getElementById('wifi-pass-shown-' + index);
+    const icon = document.getElementById('wifi-toggle-icon-' + index);
+    if (!hidden || !shown) return;
+
+    if (hidden.style.display === 'none') {
+        hidden.style.display = 'inline';
+        shown.style.display = 'none';
+        if (icon) icon.className = 'bi bi-eye';
+    } else {
+        hidden.style.display = 'none';
+        shown.style.display = 'inline';
+        if (icon) icon.className = 'bi bi-eye-slash';
+    }
+}
+
+// Isi form Edit WiFi sesuai jaringan yang dipilih di dropdown
+function onEditWlanChange() {
+    const idx = parseInt(document.getElementById('edit-wlan-index').value);
+    const net = currentWifiNetworks.find(n => n.index === idx);
+
+    document.getElementById('edit-wifi-password').value = '';
+    if (net) {
+        document.getElementById('edit-wifi-ssid').value = net.ssid;
+        document.getElementById('edit-security-mode').value = net.security_mode || 'WPA2PSK';
+    }
+    togglePasswordField();
+}
+
+function openEditWiFiModal(wlanIndex) {
+    const select = document.getElementById('edit-wlan-index');
+
+    // Dropdown hanya berisi WLAN yang aktif di ONU ini
+    select.innerHTML = '';
+    if (currentWifiNetworks.length > 0) {
+        currentWifiNetworks.forEach(n => {
+            const opt = document.createElement('option');
+            opt.value = n.index;
+            opt.textContent = `WLAN ${n.index} (${n.band}) - ${n.ssid}`;
+            select.appendChild(opt);
+        });
+    } else {
+        const opt = document.createElement('option');
+        opt.value = 1;
+        opt.textContent = 'WLAN 1';
+        select.appendChild(opt);
+    }
+
+    const wanted = parseInt(wlanIndex) || 1;
+    if ([...select.options].some(o => parseInt(o.value) === wanted)) {
+        select.value = String(wanted);
+    }
+
+    document.getElementById('edit-device-id').value = currentWifiDeviceId || deviceId;
+    onEditWlanChange();
 
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('editWiFiModal'), {
