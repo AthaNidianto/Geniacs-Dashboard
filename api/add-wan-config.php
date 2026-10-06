@@ -1,34 +1,15 @@
 <?php
 
 /**
- * Add New WAN Connection Configuration
+ * Add New WAN Connection Configuration (vendor-aware: Huawei HG8145V5 & ZTE F663NV3A)
  *
- * Creates a new WAN connection on ONU via GenieACS TR-069
+ * Huawei : setiap WAN punya slot WANConnectionDevice sendiri (slot baru = max+1, instance 1)
+ *          VLAN  -> X_HW_VLAN, Service -> X_HW_SERVICELIST, Bind -> X_HW_LANBIND.*
+ * ZTE    : semua WAN ada di slot 1, WAN baru = instance berikutnya di slot itu
+ *          VLAN  -> X_CT-COM_VLANID, Service -> X_CT-COM_ServiceList, Bind -> X_CT-COM_LanInterface
  *
- * Input (POST JSON):
- * {
- *     "device_id": "A4F33B-ZX%2DF663NV3a%20XPON-ZICG295C078F",
- *     "connection_index": 4,
- *     "connection_type": "ppp",  // "ppp" or "ip"
- *     "name": "4_INTERNET_R_VID_100",
- *     "parameters": {
- *         "Enable": true,
- *         "ConnectionType": "IP_Routed",
- *         "Username": "user@isp",
- *         "Password": "password",
- *         "NATEnabled": true,
- *         "X_CT-COM_ServiceList": "INTERNET",
- *         "X_CT-COM_VLANID": 100
- *     }
- * }
- *
- * Output:
- * {
- *     "success": true,
- *     "message": "New WAN connection created successfully",
- *     "connection_index": 4,
- *     "task_status": "queued"
- * }
+ * VLAN dan ServiceList opsional: kalau kosong tidak dikirim ke ONU.
+ * Smart Queuing: semua task diantrekan tanpa connection_request, hanya task terakhir yang membangunkan ONU.
  */
 
 require_once __DIR__ . '/../config/config.php';
@@ -49,80 +30,29 @@ function wanResponse($success, $message, $extra = []) {
 $input = json_decode(file_get_contents('php://input'), true);
 
 // Validate required fields
-if (!isset($input['device_id']) || !isset($input['connection_index']) || !isset($input['connection_type']) || !isset($input['parameters'])) {
-    wanResponse(false, 'Missing required fields: device_id, connection_index, connection_type, parameters');
+if (!isset($input['device_id']) || !isset($input['connection_type']) || !isset($input['parameters'])) {
+    wanResponse(false, 'Missing required fields: device_id, connection_type, parameters');
 }
 
 $deviceId = $input['device_id'];
-$connectionIndex = intval($input['connection_index']);
+$requestedSlot = intval($input['connection_index'] ?? 0);
 $connectionType = strtolower($input['connection_type']); // "ppp" or "ip"
 $connectionName = $input['name'] ?? '';
 $parameters = $input['parameters'];
-
-// Validate connection index (1-8)
-if ($connectionIndex < 1 || $connectionIndex > 8) {
-    wanResponse(false, 'Invalid connection index. Must be between 1 and 8.');
-}
 
 // Validate connection type
 if (!in_array($connectionType, ['ppp', 'ip'])) {
     wanResponse(false, 'Invalid connection type. Must be "ppp" or "ip".');
 }
 
-// Build TR-069 parameter path
-$basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$connectionIndex}";
-if ($connectionType === 'ppp') {
-    $basePath .= ".WANPPPConnection.1";
-} else {
-    $basePath .= ".WANIPConnection.1";
-}
-
-// Map of allowed parameters to their TR-069 paths
-$allowedParams = [
-    'Name' => 'Name',
-    'Enable' => 'Enable',
-    'ConnectionType' => 'ConnectionType',
-    'Username' => 'Username',
-    'Password' => 'Password',
-    'NATEnabled' => 'NATEnabled',
-    'X_CT-COM_ServiceList' => 'X_HW_SERVICELIST',
-    'X_CT-COM_LanInterface' => 'X_CT-COM_LanInterface',
-    'X_CT-COM_VLANID' => 'X_HW_VLAN',
+// Allowed parameters (nama logis dari frontend)
+$allowedKeys = [
+    'Name', 'Enable', 'ConnectionType', 'Username', 'Password', 'NATEnabled',
+    'X_CT-COM_ServiceList', 'X_CT-COM_LanInterface', 'X_CT-COM_VLANID',
 ];
-
-// Build parameter array for GenieACS
-$genieParams = [];
-
-// Add connection name if provided
-if (!empty($connectionName)) {
-    $genieParams[$basePath . '.Name'] = $connectionName;
-}
-
 foreach ($parameters as $key => $value) {
-    if (!isset($allowedParams[$key])) {
+    if (!in_array($key, $allowedKeys, true)) {
         wanResponse(false, "Invalid parameter: {$key}");
-    }
-
-    if ($key === 'X_CT-COM_LanInterface') {
-        foreach (preg_split('/[,;\s]+/', (string)$value) as $iface) {
-            if (preg_match('/LANEthernetInterfaceConfig\.(\d+)/', $iface, $m)) {
-                $genieParams[$basePath . ".X_HW_LANBIND.Lan{$m[1]}Enable"] = true;
-            } elseif (preg_match('/WLANConfiguration\.(\d+)/', $iface, $m)) {
-                $genieParams[$basePath . ".X_HW_LANBIND.SSID{$m[1]}Enable"] = true;
-            }
-        }
-        continue;
-    }
-
-    $fullPath = $basePath . '.' . $allowedParams[$key];
-    $genieParams[$fullPath] = $value;
-}
-
-// Validate required parameters for new connection
-$requiredParams = ['ConnectionType'];
-foreach ($requiredParams as $param) {
-    if (!isset($parameters[$param]) && $param !== 'Name') {
-        wanResponse(false, "Missing required parameter: {$param}");
     }
 }
 
@@ -154,84 +84,162 @@ $genieacs = new GenieACS(
 
 $tStart = microtime(true);
 
-// Baca instance WAN yang sudah ada di ONU (dari data yang tersimpan di GenieACS)
+// Baca WAN yang sudah ada di ONU (dari data yang tersimpan di GenieACS)
+$wcdRoot = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice';
 $subKey = ($connectionType === 'ppp') ? 'WANPPPConnection' : 'WANIPConnection';
-$devRes = $genieacs->getDevices(['_id' => $deviceId], 1, 0, 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice');
+$devRes = $genieacs->getDevices(['_id' => $deviceId], 1, 0, $wcdRoot);
 $wcd = $devRes['data'][0]['InternetGatewayDevice']['WANDevice']['1']['WANConnectionDevice'] ?? [];
 
-error_log(sprintf(
-    '[add-wan] getDevices %.2fs, hasDevice=%s hasConn=%s maxIdx=%d',
-    microtime(true) - $tStart,
-    var_export($hasDevice ?? null, true),
-    var_export($hasConn ?? null, true),
-    $maxIdx ?? -1
-));
+// Deteksi vendor: Huawei punya parameter X_HW_*, atau ID perangkat HG8*/HUAWEI
+$isHuawei = (strpos(json_encode($wcd), 'X_HW_') !== false)
+    || (bool)preg_match('/HG8|HUAWEI/i', rawurldecode($deviceId));
 
-$existingIdx = array_values(array_filter(array_keys($wcd), function ($k) {
+// Slot (WANConnectionDevice) yang ada
+$slots = array_values(array_filter(array_keys($wcd), function ($k) {
     return ctype_digit((string)$k);
 }));
-$maxIdx = $existingIdx ? max(array_map('intval', $existingIdx)) : 0;
-$hasDevice = isset($wcd[(string)$connectionIndex]);
-$hasConn = $hasDevice && isset($wcd[(string)$connectionIndex][$subKey]['1']);
+$slots = array_map('intval', $slots);
+sort($slots);
 
-// ONU yang menentukan nomor instance baru (selalu nomor berikutnya), jadi index harus pas
-if (!$hasDevice && $connectionIndex !== $maxIdx + 1) {
-    wanResponse(false, 'Index tidak valid. Untuk WAN baru gunakan index ' . ($maxIdx + 1) . '.');
+$needNewSlot = false;
+if ($isHuawei) {
+    // Huawei: satu WAN per slot. Pakai slot yang diminta kalau belum punya koneksi tipe ini,
+    // selain itu buat slot baru (max + 1).
+    $hasConnInRequested = $requestedSlot > 0
+        && isset($wcd[(string)$requestedSlot][$subKey])
+        && is_array($wcd[(string)$requestedSlot][$subKey])
+        && count(array_filter(array_keys($wcd[(string)$requestedSlot][$subKey]), 'ctype_digit')) > 0;
+
+    if ($requestedSlot > 0 && in_array($requestedSlot, $slots, true) && !$hasConnInRequested) {
+        $slot = $requestedSlot;
+    } else {
+        $slot = ($slots ? max($slots) : 0) + 1;
+        $needNewSlot = true;
+    }
+    $instance = 1;
+} else {
+    // ZTE / lainnya: WAN baru = instance berikutnya di slot yang sudah ada
+    $slot = $slots ? min($slots) : 1;
+    if (!$slots) {
+        $needNewSlot = true;
+    }
+    $existingInst = [];
+    if (isset($wcd[(string)$slot][$subKey]) && is_array($wcd[(string)$slot][$subKey])) {
+        $existingInst = array_map('intval', array_filter(array_keys($wcd[(string)$slot][$subKey]), 'ctype_digit'));
+    }
+    $instance = $existingInst ? max($existingInst) + 1 : 1;
+}
+
+$basePath = "{$wcdRoot}.{$slot}.{$subKey}.{$instance}";
+
+// Susun parameter dengan nama sesuai vendor
+$genieParams = [];
+
+if (!empty($connectionName)) {
+    $genieParams[$basePath . '.Name'] = $connectionName;
+}
+
+foreach ($parameters as $key => $value) {
+    switch ($key) {
+        case 'X_CT-COM_VLANID':
+            // opsional
+            if ($value === '' || $value === null || !is_numeric($value) || intval($value) < 1) {
+                break;
+            }
+            $genieParams[$basePath . ($isHuawei ? '.X_HW_VLAN' : '.X_CT-COM_VLANID')] = intval($value);
+            break;
+
+        case 'X_CT-COM_ServiceList':
+            // opsional
+            if ($value === '' || $value === null) {
+                break;
+            }
+            $genieParams[$basePath . ($isHuawei ? '.X_HW_SERVICELIST' : '.X_CT-COM_ServiceList')] = (string)$value;
+            break;
+
+        case 'X_CT-COM_LanInterface':
+            if ($value === '' || $value === null) {
+                break;
+            }
+            if ($isHuawei) {
+                foreach (preg_split('/[,;\s]+/', (string)$value) as $iface) {
+                    if (preg_match('/LANEthernetInterfaceConfig\.(\d+)/', $iface, $m)) {
+                        $genieParams[$basePath . ".X_HW_LANBIND.Lan{$m[1]}Enable"] = true;
+                    } elseif (preg_match('/WLANConfiguration\.(\d+)/', $iface, $m)) {
+                        $genieParams[$basePath . ".X_HW_LANBIND.SSID{$m[1]}Enable"] = true;
+                    }
+                }
+            } else {
+                $genieParams[$basePath . '.X_CT-COM_LanInterface'] = (string)$value;
+            }
+            break;
+
+        case 'Name':
+            // nama diatur lewat field "name" di atas
+            if (empty($connectionName) && $value !== '') {
+                $genieParams[$basePath . '.Name'] = (string)$value;
+            }
+            break;
+
+        default:
+            $genieParams[$basePath . '.' . $key] = $value;
+    }
 }
 
 // Susun daftar task
 $tasks = [];
 
-if (!$hasDevice) {
-    $tasks[] = [
-        'name' => 'addObject',
-        'objectName' => 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice'
-    ];
+if ($needNewSlot) {
+    $tasks[] = ['name' => 'addObject', 'objectName' => $wcdRoot];
+    // Slot baru dibuat ONU = nomor berikutnya
+    if ($isHuawei || !$slots) {
+        $newSlot = ($slots ? max($slots) : 0) + 1;
+        if ($newSlot !== $slot) {
+            wanResponse(false, 'Slot tidak konsisten, coba muat ulang halaman lalu ulangi.');
+        }
+    }
 }
-if (!$hasConn) {
-    $tasks[] = [
-        'name' => 'addObject',
-        'objectName' => "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$connectionIndex}.{$subKey}"
-    ];
-}
+$tasks[] = ['name' => 'addObject', 'objectName' => "{$wcdRoot}.{$slot}.{$subKey}"];
 
 // Format yang benar: [[path, value, type], ...]
-$boolParams = ['Enable', 'NATEnabled'];
-$uintParams = ['X_HW_VLAN'];
+$boolLeaf = ['Enable', 'NATEnabled'];
+$uintLeaf = ['X_HW_VLAN', 'X_CT-COM_VLANID'];
 $values = [];
 foreach ($genieParams as $fullPath => $val) {
     $leaf = substr($fullPath, strrpos($fullPath, '.') + 1);
-    if (in_array($leaf, $boolParams, true) || preg_match('/^(Lan|SSID)\d+Enable$/', $leaf)) {
+    if (in_array($leaf, $boolLeaf, true) || preg_match('/^(Lan|SSID)\d+Enable$/', $leaf)) {
         $type = 'xsd:boolean';
         $val = filter_var($val, FILTER_VALIDATE_BOOLEAN);
-    } elseif (in_array($leaf, $uintParams, true)) {
+    } elseif (in_array($leaf, $uintLeaf, true)) {
         $type = 'xsd:unsignedInt';
         $val = intval($val);
     } else {
         $type = 'xsd:string';
+        $val = (string)$val;
     }
     $values[] = [$fullPath, $val, $type];
 }
 $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $values];
 
-// Smart Queuing: semua task masuk antrean tanpa menunggu, hanya task terakhir yang membangunkan ONU
-$tasks[] = [
-    'name' => 'refreshObject',
-    'objectName' => 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice'
-];
+// Refresh supaya dashboard langsung dapat data terbaru
+$tasks[] = ['name' => 'refreshObject', 'objectName' => $wcdRoot];
 
+// Smart Queuing: hanya task terakhir yang membangunkan ONU
 $lastIndex = count($tasks) - 1;
 foreach ($tasks as $i => $task) {
     $res = $genieacs->queueTask($deviceId, $task, $i === $lastIndex);
 
     error_log(sprintf(
-        '[add-wan] task %d (%s) -> http=%s %.2fs note=%s',
+        '[add-wan] %s slot=%d inst=%d task %d (%s) -> http=%s %.2fs',
+        $isHuawei ? 'huawei' : 'zte/other',
+        $slot,
+        $instance,
         $i,
         $task['name'],
         $res['http_code'] ?? '-',
-        microtime(true) - $tStart,
-        $res['note'] ?? ''
+        microtime(true) - $tStart
     ));
+
     if (!$res['success']) {
         $msg = $res['error'] ?? ('HTTP ' . ($res['http_code'] ?? '?'));
         wanResponse(false, 'Gagal mengantrikan task WAN: ' . $msg);
@@ -240,7 +248,9 @@ foreach ($tasks as $i => $task) {
 
 wanResponse(true, 'Perintah WAN dikirim ke ONU. Data akan muncul setelah ONU memproses (sekitar 1 menit).', [
     'task_status' => 'queued',
-    'connection_index' => $connectionIndex,
+    'vendor' => $isHuawei ? 'huawei' : 'zte',
+    'connection_index' => $slot,
+    'connection_instance' => $instance,
     'connection_type' => $connectionType,
     'tasks_queued' => count($tasks),
     'connection_path' => $basePath

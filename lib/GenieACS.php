@@ -756,8 +756,10 @@ class GenieACS
         };
 
         // Try WANPPPConnection (most common for PPPoE)
-        for ($i = 1; $i <= 8; $i++) {
-            $basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$i}.WANPPPConnection.1";
+        for ($k = 0; $k < 64; $k++) {
+            $i = intdiv($k, 8) + 1;   // slot (WANConnectionDevice)
+            $j = ($k % 8) + 1;        // instance (WANPPPConnection)
+            $basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$i}.WANPPPConnection.{$j}";
 
             // Check if this connection exists
             if (!$checkWANExists($basePath)) {
@@ -840,6 +842,7 @@ class GenieACS
                     'type' => 'PPPoE',
                     'name' => $name,
                     'connection_index' => $i,
+                    'connection_instance' => $j,
                     'service_list' => $serviceList ?? '',
                     'vlan_id' => $getParam("{$basePath}.X_HW_VLAN") ?? $getParam("{$basePath}.X_CT-COM_VLANID") ?? 'N/A',
                     'status' => $connectionStatus,
@@ -859,8 +862,10 @@ class GenieACS
         }
 
         // Try WANIPConnection (for DHCP/Static IP)
-        for ($i = 1; $i <= 8; $i++) {
-            $basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$i}.WANIPConnection.1";
+        for ($k = 0; $k < 64; $k++) {
+            $i = intdiv($k, 8) + 1;   // slot (WANConnectionDevice)
+            $j = ($k % 8) + 1;        // instance (WANIPConnection)
+            $basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$i}.WANIPConnection.{$j}";
 
             // Check if this connection exists
             if (!$checkWANExists($basePath)) {
@@ -940,6 +945,7 @@ class GenieACS
                     'type' => 'IP',
                     'name' => $name,
                     'connection_index' => $i,
+                    'connection_instance' => $j,
                     'service_list' => $serviceList ?? '',
                     'vlan_id' => $getParam("{$basePath}.X_HW_VLAN") ?? $getParam("{$basePath}.X_CT-COM_VLANID") ?? 'N/A',
                     'status' => $connectionStatus,

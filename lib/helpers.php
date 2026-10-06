@@ -27,8 +27,22 @@ function clean($data) {
 }
 
 // JSON response helper
-function jsonResponse($data, $statusCode = 200) {
-    http_response_code($statusCode);
+// Mendukung dua gaya panggilan:
+//   jsonResponse([...], 200)                  -> gaya baru
+//   jsonResponse(true, 'pesan', [data|kode])  -> gaya lama
+function jsonResponse($data, $statusCode = 200, $extra = null) {
+    if (is_bool($data)) {
+        $payload = ['success' => $data, 'message' => (string)$statusCode];
+        $statusCode = 200;
+        if (is_int($extra)) {
+            $statusCode = $extra;
+        } elseif (is_array($extra)) {
+            $payload = array_merge($payload, $extra);
+            $payload['data'] = $extra;
+        }
+        $data = $payload;
+    }
+    http_response_code(is_int($statusCode) ? $statusCode : 200);
     header('Content-Type: application/json');
     echo json_encode($data);
     exit;

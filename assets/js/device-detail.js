@@ -1713,11 +1713,18 @@ async function confirmAddWAN() {
     // Build parameters
     const parameters = {
         Enable: true,
-        ConnectionType: connectionType === 'ppp' ? 'IP_Routed' : 'IP_Routed',
-        NATEnabled: natEnabled,
-        'X_CT-COM_VLANID': vlanId,
-        'X_CT-COM_ServiceList': serviceList === 'CUSTOM' ? document.getElementById('add-wan-service-custom').value : serviceList
+        ConnectionType: 'IP_Routed',
+        NATEnabled: natEnabled
     };
+
+    // VLAN dan Service opsional: hanya dikirim kalau diisi
+    if (!isNaN(vlanId) && vlanId > 0) {
+        parameters['X_CT-COM_VLANID'] = vlanId;
+    }
+    const svc = serviceList === 'CUSTOM' ? document.getElementById('add-wan-service-custom').value.trim() : serviceList;
+    if (svc) {
+        parameters['X_CT-COM_ServiceList'] = svc;
+    }
 
     if (connectionType === 'ppp') {
         if (!username || !password) {
