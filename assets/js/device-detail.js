@@ -1613,7 +1613,11 @@ function openEditWANModal(wanData) {
             vlanInput.value = vlanMatch[1];
         }
     }
+    // Simpan nilai awal: Edit hanya mengirim field yang benar-benar berubah
     currentWANEdit.original_vlan = vlanInput.value;
+    currentWANEdit.original_enable = document.getElementById('edit-wan-enable').value;
+    currentWANEdit.original_nat = document.getElementById('edit-wan-nat').value;
+    currentWANEdit.original_username = (wanData.username && wanData.username !== 'N/A') ? wanData.username : '';
 
     // Check if TR069
     const isTR069 = (wanData.service_list && (wanData.service_list.toUpperCase().includes('TR069') || wanData.service_list.toUpperCase().includes('CWMP'))) ||
@@ -1635,22 +1639,32 @@ async function confirmUpdateWAN() {
     const natEnabled = document.getElementById('edit-wan-nat').value === 'true';
     const vlanId = document.getElementById('edit-wan-vlan').value;
 
-    const parameters = {
-        Enable: enable,
-        NATEnabled: natEnabled
-    };
+    // Hanya kirim field yang berubah (ONU ZTE menolak seluruh perintah kalau satu parameter ditolak)
+    const orig = currentWANEdit || {};
+    const parameters = {};
 
-    if (connectionType === 'ppp' && username) {
-        parameters.Username = username;
+    if (String(enable) !== String(orig.original_enable)) {
+        parameters.Enable = enable;
+    }
+    if (String(natEnabled) !== String(orig.original_nat)) {
+        parameters.NATEnabled = natEnabled;
+    }
+    if (connectionType === 'ppp') {
+        if (username && username !== (orig.original_username || '')) {
+            parameters.Username = username;
+        }
         if (password) {
             parameters.Password = password;
         }
     }
-
     // VLAN opsional: hanya dikirim kalau diisi DAN berubah dari nilai awal
-    const originalVlan = currentWANEdit ? String(currentWANEdit.original_vlan || '') : '';
-    if (vlanId && String(vlanId) !== originalVlan) {
+    if (vlanId && String(vlanId) !== String(orig.original_vlan || '')) {
         parameters['X_CT-COM_VLANID'] = parseInt(vlanId);
+    }
+
+    if (Object.keys(parameters).length === 0) {
+        showToast('Tidak ada perubahan untuk disimpan', 'warning');
+        return;
     }
 
     // Close modal
