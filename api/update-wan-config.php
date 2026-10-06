@@ -1,214 +1,222 @@
 <?php
 /**
- * Update WAN Connection Configuration (vendor-aware: Huawei HG8145V5 & ZTE F663NV3A)
+ * Update WiFi Configuration (SSID, Password, Security Mode)
  *
- * Input (POST JSON):
- * {
- *     "device_id": "...",
- *     "connection_index": 1,        // slot WANConnectionDevice
- *     "connection_instance": 2,     // nomor WANPPPConnection / WANIPConnection (default 1)
- *     "connection_type": "ppp",     // "ppp" atau "ip"
- *     "parameters": {
- *         "Enable": true,
- *         "Username": "user@isp",
- *         "Password": "password",
- *         "NATEnabled": true,
- *         "X_CT-COM_VLANID": 30     // opsional
- *     }
- * }
- *
- * Huawei : X_CT-COM_VLANID -> X_HW_VLAN, X_CT-COM_ServiceList -> X_HW_SERVICELIST
- * ZTE    : X_CT-COM_* dipakai apa adanya
- * Smart Queuing: task diantrekan tanpa connection_request, hanya task terakhir yang membangunkan ONU.
+ * - Hanya menulis parameter yang BENAR-BENAR ada di data ONU (beda vendor beda path).
+ * - Hanya menulis parameter yang nilainya berubah.
+ * - Password boleh dikosongkan: artinya password lama dipertahankan.
+ * - SSID, password, dan setelan keamanan dikirim sebagai task terpisah, jadi satu parameter
+ *   yang ditolak ONU tidak membatalkan yang lain.
+ * - Smart Queuing: semua task diantrekan, hanya task terakhir yang membangunkan ONU.
  */
-
 require_once __DIR__ . '/../config/config.php';
+requireLogin();
+
 use App\GenieACS;
 
 header('Content-Type: application/json');
 
-// Require login
-requireLogin();
-
-function wanResponse($success, $message, $extra = []) {
-    jsonResponse(array_merge(['success' => $success, 'message' => $message], $extra));
+// Only accept POST
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    jsonResponse(['success' => false, 'message' => 'Method not allowed']);
 }
 
 // Get POST data
 $input = json_decode(file_get_contents('php://input'), true);
 
-// Validate required fields
-if (!isset($input['device_id']) || !isset($input['connection_index']) || !isset($input['connection_type']) || !isset($input['parameters'])) {
-    wanResponse(false, 'Missing required fields: device_id, connection_index, connection_type, parameters');
+if (empty($input['device_id'])) {
+    jsonResponse(['success' => false, 'message' => 'Device ID is required']);
+}
+if (empty($input['wifi_ssid'])) {
+    jsonResponse(['success' => false, 'message' => 'WiFi SSID is required']);
 }
 
 $deviceId = $input['device_id'];
-$connectionIndex = intval($input['connection_index']);
-$connectionInstance = max(1, intval($input['connection_instance'] ?? 1));
-$connectionType = strtolower($input['connection_type']); // "ppp" or "ip"
-$parameters = $input['parameters'];
+// SSID/password tidak boleh lewat clean() (htmlspecialchars merusak karakter seperti & ' ")
+$wifiSsid = trim((string)$input['wifi_ssid']);
+$securityMode = isset($input['security_mode']) ? clean($input['security_mode']) : 'WPA2PSK';
+$wifiPassword = isset($input['wifi_password']) ? (string)$input['wifi_password'] : '';
+$wlanIndex = isset($input['wlan_index']) ? intval($input['wlan_index']) : 1;
 
-if ($connectionIndex < 1 || $connectionIndex > 8) {
-    wanResponse(false, 'Invalid connection index. Must be between 1 and 8.');
+if ($wlanIndex < 1 || $wlanIndex > 8) {
+    jsonResponse(['success' => false, 'message' => 'WLAN index tidak valid']);
 }
-if ($connectionInstance > 8) {
-    wanResponse(false, 'Invalid connection instance. Must be between 1 and 8.');
+if (!in_array($securityMode, ['WPA2PSK', 'WPAPSK', 'WPA2PSKWPAPSK', 'None'], true)) {
+    jsonResponse(['success' => false, 'message' => 'Security mode tidak valid']);
 }
-if (!in_array($connectionType, ['ppp', 'ip'])) {
-    wanResponse(false, 'Invalid connection type. Must be "ppp" or "ip".');
+if (strlen($wifiSsid) < 1 || strlen($wifiSsid) > 32) {
+    jsonResponse(['success' => false, 'message' => 'WiFi SSID must be between 1 and 32 characters']);
+}
+// Password opsional (kosong = tidak diubah), tapi kalau diisi harus 8-63 karakter
+if ($securityMode !== 'None' && $wifiPassword !== '' && (strlen($wifiPassword) < 8 || strlen($wifiPassword) > 63)) {
+    jsonResponse(['success' => false, 'message' => 'WiFi Password must be between 8 and 63 characters']);
 }
 
-$allowedKeys = [
-    'Enable', 'ConnectionType', 'Username', 'Password', 'NATEnabled',
-    'X_CT-COM_ServiceList', 'X_CT-COM_LanInterface', 'X_CT-COM_VLANID',
-];
-foreach ($parameters as $key => $value) {
-    if (!in_array($key, $allowedKeys, true)) {
-        wanResponse(false, "Invalid parameter: {$key}");
+try {
+    $db = getDBConnection();
+    $stmt = $db->prepare("SELECT host, port, username, password FROM genieacs_credentials LIMIT 1");
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows === 0) {
+        jsonResponse(['success' => false, 'message' => 'GenieACS not configured. Please configure it first.']);
     }
-}
+    $config = $result->fetch_assoc();
+    $stmt->close();
 
-// Get GenieACS credentials
-$db = getDBConnection();
-$stmt = $db->prepare("SELECT host, port, username, password FROM genieacs_credentials LIMIT 1");
-$stmt->execute();
-$result = $stmt->get_result();
-$genieConfig = $result->fetch_assoc();
+    $genieacs = new GenieACS($config['host'], $config['port'], $config['username'], $config['password']);
 
-if (!$genieConfig) {
-    wanResponse(false, 'GenieACS credentials not configured');
-}
-
-// Initialize GenieACS client
-$genieacs = new GenieACS(
-    $genieConfig['host'],
-    $genieConfig['port'],
-    $genieConfig['username'],
-    $genieConfig['password']
-);
-
-// Path WAN yang diedit
-$wcdRoot = 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice';
-$subKey = ($connectionType === 'ppp') ? 'WANPPPConnection' : 'WANIPConnection';
-$basePath = "{$wcdRoot}.{$connectionIndex}.{$subKey}.{$connectionInstance}";
-
-// Deteksi vendor
-$devRes = $genieacs->getDevices(['_id' => $deviceId], 1, 0, $wcdRoot);
-$wcd = $devRes['data'][0]['InternetGatewayDevice']['WANDevice']['1']['WANConnectionDevice'] ?? [];
-$isHuawei = (strpos(json_encode($wcd), 'X_HW_') !== false)
-    || (bool)preg_match('/HG8|HUAWEI/i', rawurldecode($deviceId));
-
-// Susun parameter sesuai vendor
-$genieParams = [];
-foreach ($parameters as $key => $value) {
-    switch ($key) {
-        case 'X_CT-COM_VLANID':
-            if ($value === '' || $value === null || !is_numeric($value) || intval($value) < 1) {
-                break; // VLAN opsional
-            }
-            $genieParams[$basePath . ($isHuawei ? '.X_HW_VLAN' : '.X_CT-COM_VLANID')] = intval($value);
-            break;
-
-        case 'X_CT-COM_ServiceList':
-            if ($value === '' || $value === null) {
-                break;
-            }
-            $genieParams[$basePath . ($isHuawei ? '.X_HW_SERVICELIST' : '.X_CT-COM_ServiceList')] = (string)$value;
-            break;
-
-        case 'X_CT-COM_LanInterface':
-            if ($value === '' || $value === null) {
-                break;
-            }
-            if ($isHuawei) {
-                foreach (preg_split('/[,;\s]+/', (string)$value) as $iface) {
-                    if (preg_match('/LANEthernetInterfaceConfig\.(\d+)/', $iface, $m)) {
-                        $genieParams[$basePath . ".X_HW_LANBIND.Lan{$m[1]}Enable"] = true;
-                    } elseif (preg_match('/WLANConfiguration\.(\d+)/', $iface, $m)) {
-                        $genieParams[$basePath . ".X_HW_LANBIND.SSID{$m[1]}Enable"] = true;
-                    }
-                }
-            } else {
-                $genieParams[$basePath . '.X_CT-COM_LanInterface'] = (string)$value;
-            }
-            break;
-
-        default:
-            $genieParams[$basePath . '.' . $key] = $value;
+    // Ambil data ONU untuk mengetahui path mana yang ada dan nilai saat ini
+    $deviceResult = $genieacs->getDevice($deviceId);
+    if (empty($deviceResult['success'])) {
+        jsonResponse(['success' => false, 'message' => 'Device tidak ditemukan di GenieACS']);
     }
-}
+    $device = $deviceResult['data'];
 
-if (empty($genieParams)) {
-    wanResponse(false, 'No valid parameters provided for update');
-}
+    // Baca satu parameter dari dokumen device: ['exists' => bool, 'value' => mixed]
+    $readParam = function ($path) use ($device) {
+        $node = $device;
+        foreach (explode('.', $path) as $part) {
+            if (!is_array($node) || !array_key_exists($part, $node)) {
+                return ['exists' => false, 'value' => null];
+            }
+            $node = $node[$part];
+        }
+        if (is_array($node) && array_key_exists('_value', $node)) {
+            return ['exists' => true, 'value' => $node['_value']];
+        }
+        return ['exists' => false, 'value' => null];
+    };
 
-// Format yang benar: [[path, value, type], ...]
-$boolLeaf = ['Enable', 'NATEnabled'];
-$uintLeaf = ['X_HW_VLAN', 'X_CT-COM_VLANID'];
-$values = [];
-foreach ($genieParams as $fullPath => $val) {
-    $leaf = substr($fullPath, strrpos($fullPath, '.') + 1);
-    if (in_array($leaf, $boolLeaf, true) || preg_match('/^(Lan|SSID)\d+Enable$/', $leaf)) {
-        $type = 'xsd:boolean';
-        $val = filter_var($val, FILTER_VALIDATE_BOOLEAN);
-    } elseif (in_array($leaf, $uintLeaf, true)) {
-        $type = 'xsd:unsignedInt';
-        $val = intval($val);
-    } else {
-        $type = 'xsd:string';
-        $val = (string)$val;
+    $isTr181 = !isset($device['InternetGatewayDevice']) && isset($device['Device']);
+    $wlan = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}";
+
+    $taskSsid = [];
+    $taskPassword = [];
+    $taskSecurity = [];
+    $skipped = [];
+
+    // ---------- SSID ----------
+    $ssidPath = $isTr181 ? "Device.WiFi.SSID.{$wlanIndex}.SSID" : "{$wlan}.SSID";
+    $cur = $readParam($ssidPath);
+    if (!$cur['exists'] || (string)$cur['value'] !== $wifiSsid) {
+        $taskSsid[] = [$ssidPath, $wifiSsid, 'xsd:string'];
     }
-    $values[] = [$fullPath, $val, $type];
-}
 
-$tasks = [];
-if ($isHuawei) {
-    $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $values];
-} else {
-    // ZTE menolak SELURUH perintah (cwmp.9003) kalau satu parameter saja ditolak.
-    // Parameter inti satu paket, parameter tambahan (service/VLAN/bind) satu per satu.
-    $coreLeaves = ['Enable', 'ConnectionType', 'NATEnabled', 'Username', 'Password'];
-    $core = [];
-    $extras = [];
-    foreach ($values as $v) {
-        $leaf = substr($v[0], strrpos($v[0], '.') + 1);
-        if (in_array($leaf, $coreLeaves, true)) {
-            $core[] = $v;
+    // ---------- Password ----------
+    if ($securityMode !== 'None' && $wifiPassword !== '') {
+        if ($isTr181) {
+            $passCandidates = ["Device.WiFi.AccessPoint.{$wlanIndex}.Security.KeyPassphrase"];
         } else {
-            $extras[] = $v;
+            $passCandidates = [
+                "{$wlan}.PreSharedKey.1.KeyPassphrase",
+                "{$wlan}.KeyPassphrase",
+                "{$wlan}.PreSharedKey.1.PreSharedKey",
+            ];
+        }
+        $passPath = null;
+        foreach ($passCandidates as $cand) {
+            if ($readParam($cand)['exists']) {
+                $passPath = $cand;
+                break;
+            }
+        }
+        // Tidak ketemu di data ONU: pakai path standar TR-098
+        if ($passPath === null) {
+            $passPath = $passCandidates[0];
+        }
+        $taskPassword[] = [$passPath, $wifiPassword, 'xsd:string'];
+    }
+
+    // ---------- Security mode ----------
+    if (!$isTr181) {
+        $beaconMap = [
+            'WPA2PSK' => '11i',
+            'WPAPSK' => 'WPA',
+            'WPA2PSKWPAPSK' => 'WPAand11i',
+            'None' => 'Basic',
+        ];
+        $wanted = [];
+        $wanted["{$wlan}.BeaconType"] = $beaconMap[$securityMode];
+
+        if ($securityMode === 'WPA2PSK' || $securityMode === 'WPA2PSKWPAPSK') {
+            $wanted["{$wlan}.IEEE11iAuthenticationMode"] = 'PSKAuthentication';
+            $wanted["{$wlan}.IEEE11iEncryptionModes"] = ($securityMode === 'WPA2PSK') ? 'AESEncryption' : 'TKIPandAESEncryption';
+        }
+        if ($securityMode === 'WPAPSK' || $securityMode === 'WPA2PSKWPAPSK') {
+            $wanted["{$wlan}.WPAAuthenticationMode"] = 'PSKAuthentication';
+            $wanted["{$wlan}.WPAEncryptionModes"] = ($securityMode === 'WPAPSK') ? 'TKIPEncryption' : 'TKIPandAESEncryption';
+        }
+
+        foreach ($wanted as $path => $val) {
+            $c = $readParam($path);
+            if (!$c['exists']) {
+                $skipped[] = $path; // parameter tidak ada di ONU ini
+                continue;
+            }
+            if ((string)$c['value'] === (string)$val) {
+                continue; // sudah sama
+            }
+            $taskSecurity[] = [$path, $val, 'xsd:string'];
         }
     }
-    if ($core) {
-        $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $core];
+
+    // ---------- Susun task ----------
+    $tasks = [];
+    if ($taskSsid) {
+        $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $taskSsid];
     }
-    foreach ($extras as $v) {
-        $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => [$v]];
+    if ($taskPassword) {
+        $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $taskPassword];
     }
+    if ($taskSecurity) {
+        // satu per satu supaya yang tidak diterima ONU tidak membatalkan yang lain
+        foreach ($taskSecurity as $p) {
+            $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => [$p]];
+        }
+    }
+
+    if (empty($tasks)) {
+        jsonResponse(['success' => true, 'message' => 'Tidak ada perubahan: SSID dan setelan sudah sama dengan di ONU.']);
+    }
+
+    $refreshPath = $isTr181 ? 'Device.WiFi' : "InternetGatewayDevice.LANDevice.1.WLANConfiguration.{$wlanIndex}";
+    $tasks[] = ['name' => 'refreshObject', 'objectName' => $refreshPath];
+
+    $lastIndex = count($tasks) - 1;
+    foreach ($tasks as $i => $task) {
+        $res = $genieacs->queueTask($deviceId, $task, $i === $lastIndex);
+
+        $names = [];
+        foreach (($task['parameterValues'] ?? []) as $pv) {
+            $names[] = substr($pv[0], strrpos($pv[0], '.') + 1);
+        }
+        error_log(sprintf(
+            '[update-wifi] wlan=%d task %d (%s %s) -> http=%s',
+            $wlanIndex, $i, $task['name'], implode(',', $names), $res['http_code'] ?? '-'
+        ));
+
+        if (empty($res['success'])) {
+            $msg = $res['error'] ?? ('HTTP ' . ($res['http_code'] ?? '?'));
+            jsonResponse(['success' => false, 'message' => 'Gagal mengantrikan task WiFi: ' . $msg]);
+        }
+    }
+
+    jsonResponse([
+        'success' => true,
+        'message' => 'Perintah WiFi dikirim ke ONU. Perubahan tampil setelah ONU memproses (sekitar 1 menit).',
+        'data' => [
+            'device_id' => $deviceId,
+            'wifi_ssid' => $wifiSsid,
+            'security_mode' => $securityMode,
+            'wlan_index' => $wlanIndex,
+            'password_changed' => !empty($taskPassword),
+            'tasks_queued' => count($tasks),
+            'skipped_params' => $skipped,
+            'response_time' => 'queued'
+        ]
+    ]);
+
+} catch (Exception $e) {
+    jsonResponse(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
 }
-$tasks[] = ['name' => 'refreshObject', 'objectName' => $wcdRoot];
-
-$lastIndex = count($tasks) - 1;
-foreach ($tasks as $i => $task) {
-    $res = $genieacs->queueTask($deviceId, $task, $i === $lastIndex);
-
-    error_log(sprintf(
-        '[update-wan] %s %s task %d (%s) -> http=%s',
-        $isHuawei ? 'huawei' : 'zte/other',
-        $basePath,
-        $i,
-        $task['name'],
-        $res['http_code'] ?? '-'
-    ));
-
-    if (empty($res['success'])) {
-        $msg = $res['error'] ?? ('HTTP ' . ($res['http_code'] ?? '?'));
-        wanResponse(false, 'Gagal mengantrikan task update WAN: ' . $msg);
-    }
-}
-
-wanResponse(true, 'Perintah update WAN dikirim ke ONU. Perubahan tampil setelah ONU memproses (sekitar 1 menit).', [
-    'task_status' => 'queued',
-    'vendor' => $isHuawei ? 'huawei' : 'zte',
-    'parameters_updated' => count($genieParams),
-    'connection_path' => $basePath
-]);

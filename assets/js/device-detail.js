@@ -1452,7 +1452,9 @@ function openEditWiFiModal(deviceId, currentSsid, currentPassword) {
     // Set form values
     document.getElementById('edit-device-id').value = deviceId;
     document.getElementById('edit-wifi-ssid').value = currentSsid;
-    document.getElementById('edit-wifi-password').value = currentPassword;
+    // Password lama sering tidak terbaca dari ONU (kosong / N/A): jangan diisi paksa
+    document.getElementById('edit-wifi-password').value =
+        (currentPassword && currentPassword !== 'N/A') ? currentPassword : '';
     document.getElementById('edit-wlan-index').value = '1'; // Default to WLAN 1
 
     // Show modal
@@ -1488,7 +1490,8 @@ function togglePasswordField() {
     } else {
         // Show password field for secured network
         passwordFieldGroup.style.display = 'block';
-        passwordField.setAttribute('required', 'required');
+        // Password opsional: kosong = password lama dipertahankan
+        passwordField.removeAttribute('required');
     }
 }
 
@@ -1514,8 +1517,8 @@ async function confirmUpdateWiFi() {
         return;
     }
 
-    // Validate password length only if security mode is not Open
-    if (securityMode !== 'None') {
+    // Password opsional (kosong = tidak diubah), tapi kalau diisi harus 8-63 karakter
+    if (securityMode !== 'None' && wifiPassword !== '') {
         if (wifiPassword.length < 8 || wifiPassword.length > 63) {
             showToast('WiFi Password harus antara 8-63 karakter', 'danger');
             return;
@@ -1537,8 +1540,8 @@ async function confirmUpdateWiFi() {
             wlan_index: parseInt(wlanIndex)
         };
 
-        // Only include password if security mode is not Open
-        if (securityMode !== 'None') {
+        // Kirim password hanya kalau diisi dan jaringan tidak Open
+        if (securityMode !== 'None' && wifiPassword !== '') {
             requestData.wifi_password = wifiPassword;
         }
 

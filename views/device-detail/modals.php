@@ -73,8 +73,8 @@
                         </label>
                         <div class="input-group">
                             <input type="password" class="form-control" id="edit-wifi-password" name="wifi_password"
-                                   minlength="8" maxlength="63"
-                                   placeholder="Enter WiFi Password (8-63 characters)">
+                                   minlength="8" maxlength="63" autocomplete="new-password"
+                                   placeholder="Kosongkan jika password tidak diubah (8-63 karakter)">
                             <button class="btn btn-outline-secondary" type="button" onclick="toggleEditPassword()">
                                 <i id="edit-toggle-icon" class="bi bi-eye"></i>
                             </button>
