@@ -161,10 +161,31 @@ foreach ($genieParams as $fullPath => $val) {
     $values[] = [$fullPath, $val, $type];
 }
 
-$tasks = [
-    ['name' => 'setParameterValues', 'parameterValues' => $values],
-    ['name' => 'refreshObject', 'objectName' => $wcdRoot],
-];
+$tasks = [];
+if ($isHuawei) {
+    $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $values];
+} else {
+    // ZTE menolak SELURUH perintah (cwmp.9003) kalau satu parameter saja ditolak.
+    // Parameter inti satu paket, parameter tambahan (service/VLAN/bind) satu per satu.
+    $coreLeaves = ['Enable', 'ConnectionType', 'NATEnabled', 'Username', 'Password'];
+    $core = [];
+    $extras = [];
+    foreach ($values as $v) {
+        $leaf = substr($v[0], strrpos($v[0], '.') + 1);
+        if (in_array($leaf, $coreLeaves, true)) {
+            $core[] = $v;
+        } else {
+            $extras[] = $v;
+        }
+    }
+    if ($core) {
+        $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => $core];
+    }
+    foreach ($extras as $v) {
+        $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => [$v]];
+    }
+}
+$tasks[] = ['name' => 'refreshObject', 'objectName' => $wcdRoot];
 
 $lastIndex = count($tasks) - 1;
 foreach ($tasks as $i => $task) {
