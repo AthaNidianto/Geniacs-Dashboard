@@ -605,8 +605,8 @@ function renderWANDetailsTab(wanDetails) {
         );
 
         // Extract VLAN ID from connection name
-        const vlanMatch = wan.name.match(/VID[_-]?(\d+)/i);
-        const vlanId = vlanMatch ? vlanMatch[1] : null;
+        const vlanMatch = (wan.name || '').match(/VID[_-]?(\d+)/i);
+        const vlanId = (wan.vlan_id && wan.vlan_id !== 'N/A') ? wan.vlan_id : (vlanMatch ? vlanMatch[1] : null);
 
         // Check if this is TR069 connection
         const isTR069 = (wan.service_list && (wan.service_list.toUpperCase().includes('TR069') || wan.service_list.toUpperCase().includes('CWMP'))) ||
@@ -806,8 +806,8 @@ function renderWANDetails(wanDetails) {
         );
 
         // Extract VLAN ID from connection name (e.g., "2_INTERNET_B_VID_20" -> "20")
-        const vlanMatch = wan.name.match(/VID[_-]?(\d+)/i);
-        const vlanId = vlanMatch ? vlanMatch[1] : null;
+        const vlanMatch = (wan.name || '').match(/VID[_-]?(\d+)/i);
+        const vlanId = (wan.vlan_id && wan.vlan_id !== 'N/A') ? wan.vlan_id : (vlanMatch ? vlanMatch[1] : null);
 
         // Check if this is TR069 connection
         const isTR069 = (wan.service_list && (wan.service_list.toUpperCase().includes('TR069') || wan.service_list.toUpperCase().includes('CWMP'))) ||
@@ -1574,15 +1574,18 @@ async function confirmUpdateWiFi() {
 
 // Global variable to store WAN data for delete confirmation
 let currentWANDelete = null;
+let currentWANEdit = null;
 
 // WAN Modal Functions
 function openEditWANModal(wanData) {
+    currentWANEdit = wanData;
+
     // Populate form
     document.getElementById('edit-wan-device-id').value = deviceId;
     document.getElementById('edit-wan-connection-index').value = wanData.connection_index || '';
     document.getElementById('edit-wan-connection-type').value = wanData.type === 'PPPoE' ? 'ppp' : 'ip';
     document.getElementById('edit-wan-name').value = wanData.name || '';
-    document.getElementById('edit-wan-enable').value = wanData.status === 'Connected' ? 'true' : 'false';
+    document.getElementById('edit-wan-enable').value = (wanData.status === 'Connected' || wanData.status === 'Connecting') ? 'true' : 'false';
 
     // Show/hide PPPoE fields
     const isPPPoE = wanData.type === 'PPPoE';
@@ -1599,11 +1602,18 @@ function openEditWANModal(wanData) {
         document.getElementById('edit-wan-nat').value = wanData.nat_enabled ? 'true' : 'false';
     }
 
-    // Extract VLAN from name
-    const vlanMatch = wanData.name.match(/VID[_-]?(\d+)/i);
-    if (vlanMatch) {
-        document.getElementById('edit-wan-vlan').value = vlanMatch[1];
+    // VLAN: pakai nilai asli dari ONU, fallback ke nama WAN
+    const vlanInput = document.getElementById('edit-wan-vlan');
+    vlanInput.value = '';
+    if (wanData.vlan_id && wanData.vlan_id !== 'N/A') {
+        vlanInput.value = wanData.vlan_id;
+    } else {
+        const vlanMatch = (wanData.name || '').match(/VID[_-]?(\d+)/i);
+        if (vlanMatch) {
+            vlanInput.value = vlanMatch[1];
+        }
     }
+    currentWANEdit.original_vlan = vlanInput.value;
 
     // Check if TR069
     const isTR069 = (wanData.service_list && (wanData.service_list.toUpperCase().includes('TR069') || wanData.service_list.toUpperCase().includes('CWMP'))) ||
@@ -1637,7 +1647,9 @@ async function confirmUpdateWAN() {
         }
     }
 
-    if (vlanId) {
+    // VLAN opsional: hanya dikirim kalau diisi DAN berubah dari nilai awal
+    const originalVlan = currentWANEdit ? String(currentWANEdit.original_vlan || '') : '';
+    if (vlanId && String(vlanId) !== originalVlan) {
         parameters['X_CT-COM_VLANID'] = parseInt(vlanId);
     }
 
@@ -1652,6 +1664,7 @@ async function confirmUpdateWAN() {
         body: JSON.stringify({
             device_id: deviceId,
             connection_index: parseInt(connectionIndex),
+            connection_instance: currentWANEdit ? (currentWANEdit.connection_instance || 1) : 1,
             connection_type: connectionType,
             parameters: parameters
         })
@@ -1810,6 +1823,7 @@ async function confirmDeleteWAN() {
         body: JSON.stringify({
             device_id: deviceId,
             connection_index: currentWANDelete.connection_index,
+            connection_instance: currentWANDelete.connection_instance || 1,
             connection_type: currentWANDelete.type === 'PPPoE' ? 'ppp' : 'ip',
             connection_name: currentWANDelete.name,
             service_list: currentWANDelete.service_list || '',

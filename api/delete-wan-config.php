@@ -49,6 +49,7 @@ if (!isset($input['device_id']) || !isset($input['connection_index']) || !isset(
 
 $deviceId = $input['device_id'];
 $connectionIndex = intval($input['connection_index']);
+$connectionInstance = max(1, intval($input['connection_instance'] ?? 1));
 $connectionType = strtolower($input['connection_type']); // "ppp" or "ip"
 $connectionName = $input['connection_name'] ?? '';
 $serviceList = $input['service_list'] ?? '';
@@ -95,9 +96,9 @@ if ($isTR069 && !$confirmTR069Delete) {
 // Build TR-069 parameter path
 $basePath = "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{$connectionIndex}";
 if ($connectionType === 'ppp') {
-    $basePath .= ".WANPPPConnection.1";
+    $basePath .= ".WANPPPConnection.{$connectionInstance}";
 } else {
-    $basePath .= ".WANIPConnection.1";
+    $basePath .= ".WANIPConnection.{$connectionInstance}";
 }
 
 // Get GenieACS credentials

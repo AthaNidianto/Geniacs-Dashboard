@@ -123,7 +123,7 @@
                     <i class="bi bi-exclamation-triangle"></i>
                     <strong>WARNING:</strong> This is a TR069 management connection. Modifying this connection may break device communication with GenieACS. Only proceed if you know what you're doing.
                 </div>
-                <form id="editWANForm">
+                <form id="editWANForm" autocomplete="off">
                     <input type="hidden" id="edit-wan-device-id">
                     <input type="hidden" id="edit-wan-connection-index">
                     <input type="hidden" id="edit-wan-connection-type">
@@ -150,14 +150,14 @@
                         <label class="form-label">
                             <i class="bi bi-person"></i> PPPoE Username
                         </label>
-                        <input type="text" class="form-control" id="edit-wan-username" placeholder="Enter PPPoE username">
+                        <input type="text" class="form-control" id="edit-wan-username" placeholder="Enter PPPoE username" autocomplete="off">
                     </div>
 
                     <div class="mb-3" id="edit-wan-password-group">
                         <label class="form-label">
                             <i class="bi bi-key"></i> PPPoE Password
                         </label>
-                        <input type="password" class="form-control" id="edit-wan-password" placeholder="Enter PPPoE password">
+                        <input type="password" class="form-control" id="edit-wan-password" placeholder="Enter PPPoE password" autocomplete="new-password">
                     </div>
 
                     <div class="mb-3">
@@ -172,9 +172,9 @@
 
                     <div class="mb-3">
                         <label class="form-label">
-                            <i class="bi bi-tag"></i> VLAN ID
+                            <i class="bi bi-tag"></i> VLAN ID <span class="text-muted">(opsional)</span>
                         </label>
-                        <input type="number" class="form-control" id="edit-wan-vlan" min="1" max="4094" placeholder="1-4094">
+                        <input type="number" class="form-control" id="edit-wan-vlan" min="1" max="4094" placeholder="Kosongkan jika tidak diubah">
                     </div>
                 </form>
             </div>
@@ -271,9 +271,9 @@
 
                     <div class="mb-3">
                         <label class="form-label">
-                            <i class="bi bi-tag"></i> VLAN ID
+                            <i class="bi bi-tag"></i> VLAN ID <span class="text-muted">(opsional)</span>
                         </label>
-                        <input type="number" class="form-control" id="add-wan-vlan" min="1" max="4094" placeholder="1-4094" required>
+                        <input type="number" class="form-control" id="add-wan-vlan" min="1" max="4094" placeholder="1-4094 (kosongkan jika tidak perlu)">
                     </div>
 
                     <div class="mb-3">
