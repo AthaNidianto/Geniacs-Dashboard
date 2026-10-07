@@ -97,8 +97,8 @@ async function loadDeviceDetail(isAutoRefresh = false) {
     if (result && result.success) {
         const device = result.device;
 
-        // Fetch ONU location from map
-        const locationResult = await fetchAPI('/api/get-onu-location.php?serial_number=' + encodeURIComponent(device.serial_number));
+        // // Fetch ONU location from map
+        // const locationResult = await fetchAPI('/api/get-onu-location.php?serial_number=' + encodeURIComponent(device.serial_number));
 
         // Update badge
         document.getElementById('device-id-badge').textContent = device.serial_number;
@@ -200,8 +200,8 @@ async function loadDeviceDetail(isAutoRefresh = false) {
             </div>
         `;
 
-        // Populate Topology Location Tab
-        document.getElementById('topology-content').innerHTML = renderTopologyLocationTab(locationResult);
+        // // Populate Topology Location Tab
+        // document.getElementById('topology-content').innerHTML = renderTopologyLocationTab(locationResult);
 
         // Populate WAN Connections Tab
         document.getElementById('wan-content').innerHTML = renderWANDetailsTab(device.wan_details);
@@ -295,264 +295,264 @@ function makeIPClickable(ip) {
     return `<a href="http://${ip}" target="_blank" rel="noopener noreferrer" title="Open http://${ip}">${ip}</a>`;
 }
 
-function renderTopologyLocationTab(locationResult) {
-    if (!locationResult || !locationResult.success) {
-        return '<div class="alert alert-info"><i class="bi bi-info-circle"></i> Unable to load topology location</div>';
-    }
+// function renderTopologyLocationTab(locationResult) {
+//     if (!locationResult || !locationResult.success) {
+//         return '<div class="alert alert-info"><i class="bi bi-info-circle"></i> Unable to load topology location</div>';
+//     }
 
-    // ONU not found in map
-    if (!locationResult.location || !locationResult.location.found) {
-        return `
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle"></i>
-                <strong>Topology Location:</strong> This device has not been added to the network map yet.
-                <a href="/map.php" class="alert-link">Add to map</a>
-            </div>
-        `;
-    }
+//     // ONU not found in map
+//     if (!locationResult.location || !locationResult.location.found) {
+//         return `
+//             <div class="alert alert-info">
+//                 <i class="bi bi-info-circle"></i>
+//                 <strong>Topology Location:</strong> This device has not been added to the network map yet.
+//                 <a href="/map.php" class="alert-link">Add to map</a>
+//             </div>
+//         `;
+//     }
 
-    const loc = locationResult.location;
-    let html = '';
+//     const loc = locationResult.location;
+//     let html = '';
 
-    // Build hierarchy path
-    let pathParts = [];
-    if (loc.server && loc.server.name) {
-        pathParts.push(`<span class="badge bg-secondary">${loc.server.name}</span>`);
-    }
-    if (loc.olt && loc.olt.name) {
-        pathParts.push(`<span class="badge bg-info">${loc.olt.name}</span>`);
-    }
-    if (loc.odc && loc.odc.name) {
-        pathParts.push(`<span class="badge bg-warning text-dark">${loc.odc.name}</span>`);
-    }
-    if (loc.odp && loc.odp.name) {
-        pathParts.push(`<span class="badge bg-success">${loc.odp.name}</span>`);
-    }
-    if (loc.onu && loc.onu.name) {
-        pathParts.push(`<span class="badge bg-primary">${loc.onu.name}</span>`);
-    }
+//     // Build hierarchy path
+//     let pathParts = [];
+//     if (loc.server && loc.server.name) {
+//         pathParts.push(`<span class="badge bg-secondary">${loc.server.name}</span>`);
+//     }
+//     if (loc.olt && loc.olt.name) {
+//         pathParts.push(`<span class="badge bg-info">${loc.olt.name}</span>`);
+//     }
+//     if (loc.odc && loc.odc.name) {
+//         pathParts.push(`<span class="badge bg-warning text-dark">${loc.odc.name}</span>`);
+//     }
+//     if (loc.odp && loc.odp.name) {
+//         pathParts.push(`<span class="badge bg-success">${loc.odp.name}</span>`);
+//     }
+//     if (loc.onu && loc.onu.name) {
+//         pathParts.push(`<span class="badge bg-primary">${loc.onu.name}</span>`);
+//     }
 
-    if (pathParts.length > 0) {
-        html += '<div class="mb-3">';
-        html += '<h6><i class="bi bi-diagram-3"></i> Hierarchy Path</h6>';
-        html += '<div class="p-3 bg-light rounded">' + pathParts.join(' <i class="bi bi-arrow-right"></i> ') + '</div>';
-        html += '</div>';
-    }
+//     if (pathParts.length > 0) {
+//         html += '<div class="mb-3">';
+//         html += '<h6><i class="bi bi-diagram-3"></i> Hierarchy Path</h6>';
+//         html += '<div class="p-3 bg-light rounded">' + pathParts.join(' <i class="bi bi-arrow-right"></i> ') + '</div>';
+//         html += '</div>';
+//     }
 
-    html += '<table class="table table-bordered">';
+//     html += '<table class="table table-bordered">';
 
-    // ODP Information
-    if (loc.odp && loc.odp.name) {
-        html += `
-            <tr>
-                <th width="30%"><i class="bi bi-box"></i> ODP</th>
-                <td>
-                    <strong>${loc.odp.name}</strong>
-                    <a href="/map.php?focus_type=odp&focus_id=${loc.odp.id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
+//     // ODP Information
+//     if (loc.odp && loc.odp.name) {
+//         html += `
+//             <tr>
+//                 <th width="30%"><i class="bi bi-box"></i> ODP</th>
+//                 <td>
+//                     <strong>${loc.odp.name}</strong>
+//                     <a href="/map.php?focus_type=odp&focus_id=${loc.odp.id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
+//                         <i class="bi bi-map"></i> View on Map
+//                     </a>
+//                 </td>
+//             </tr>
+//         `;
+//     }
 
-    // Port Number
-    if (loc.onu && loc.onu.port && loc.onu.port !== 'N/A') {
-        html += `
-            <tr>
-                <th><i class="bi bi-plug"></i> Port Number</th>
-                <td><span class="badge bg-info">Port ${loc.onu.port}</span></td>
-            </tr>
-        `;
-    }
+//     // Port Number
+//     if (loc.onu && loc.onu.port && loc.onu.port !== 'N/A') {
+//         html += `
+//             <tr>
+//                 <th><i class="bi bi-plug"></i> Port Number</th>
+//                 <td><span class="badge bg-info">Port ${loc.onu.port}</span></td>
+//             </tr>
+//         `;
+//     }
 
-    // ODC Information
-    if (loc.odc && loc.odc.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-building"></i> ODC</th>
-                <td>
-                    <strong>${loc.odc.name}</strong>
-                    <a href="/map.php?focus_type=odc&focus_id=${loc.odc.id}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
+//     // ODC Information
+//     if (loc.odc && loc.odc.name) {
+//         html += `
+//             <tr>
+//                 <th><i class="bi bi-building"></i> ODC</th>
+//                 <td>
+//                     <strong>${loc.odc.name}</strong>
+//                     <a href="/map.php?focus_type=odc&focus_id=${loc.odc.id}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
+//                         <i class="bi bi-map"></i> View on Map
+//                     </a>
+//                 </td>
+//             </tr>
+//         `;
+//     }
 
-    // OLT Information
-    if (loc.olt && loc.olt.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-hdd-network"></i> OLT</th>
-                <td><strong>${loc.olt.name}</strong></td>
-            </tr>
-        `;
-    }
+//     // OLT Information
+//     if (loc.olt && loc.olt.name) {
+//         html += `
+//             <tr>
+//                 <th><i class="bi bi-hdd-network"></i> OLT</th>
+//                 <td><strong>${loc.olt.name}</strong></td>
+//             </tr>
+//         `;
+//     }
 
-    // Coordinates and Google Maps
-    if (loc.onu && loc.onu.lat && loc.onu.lng) {
-        const lat = parseFloat(loc.onu.lat);
-        const lng = parseFloat(loc.onu.lng);
+//     // Coordinates and Google Maps
+//     if (loc.onu && loc.onu.lat && loc.onu.lng) {
+//         const lat = parseFloat(loc.onu.lat);
+//         const lng = parseFloat(loc.onu.lng);
 
-        // Only show if coordinates are not 0,0
-        if (lat !== 0 && lng !== 0) {
-            const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+//         // Only show if coordinates are not 0,0
+//         if (lat !== 0 && lng !== 0) {
+//             const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
 
-            html += `
-                <tr>
-                    <th><i class="bi bi-geo-alt"></i> Coordinates</th>
-                    <td>
-                        <code>${lat.toFixed(6)}, ${lng.toFixed(6)}</code>
-                        <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
-                            <i class="bi bi-globe"></i> View on Google Maps
-                        </a>
-                        <a href="/map.php?focus_type=onu&focus_id=${loc.onu.id}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
-                            <i class="bi bi-map"></i> View on Network Map
-                        </a>
-                    </td>
-                </tr>
-            `;
-        }
-    }
+//             html += `
+//                 <tr>
+//                     <th><i class="bi bi-geo-alt"></i> Coordinates</th>
+//                     <td>
+//                         <code>${lat.toFixed(6)}, ${lng.toFixed(6)}</code>
+//                         <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
+//                             <i class="bi bi-globe"></i> View on Google Maps
+//                         </a>
+//                         <a href="/map.php?focus_type=onu&focus_id=${loc.onu.id}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
+//                             <i class="bi bi-map"></i> View on Network Map
+//                         </a>
+//                     </td>
+//                 </tr>
+//             `;
+//         }
+//     }
 
-    html += '</table>';
-    return html;
-}
+//     html += '</table>';
+//     return html;
+// }
 
-function renderTopologyLocation(locationResult) {
-    if (!locationResult || !locationResult.success) {
-        return '';
-    }
+// function renderTopologyLocation(locationResult) {
+//     if (!locationResult || !locationResult.success) {
+//         return '';
+//     }
 
-    // ONU not found in map
-    if (!locationResult.location || !locationResult.location.found) {
-        return `
-            <div class="alert alert-info mb-3">
-                <i class="bi bi-info-circle"></i>
-                <strong>Topology Location:</strong> This device has not been added to the network map yet.
-                <a href="/map.php" class="alert-link">Add to map</a>
-            </div>
-        `;
-    }
+//     // ONU not found in map
+//     if (!locationResult.location || !locationResult.location.found) {
+//         return `
+//             <div class="alert alert-info mb-3">
+//                 <i class="bi bi-info-circle"></i>
+//                 <strong>Topology Location:</strong> This device has not been added to the network map yet.
+//                 <a href="/map.php" class="alert-link">Add to map</a>
+//             </div>
+//         `;
+//     }
 
-    const loc = locationResult.location;
-    let html = '<div class="card mb-3 border-primary">';
-    html += '<div class="card-header bg-primary text-white">';
-    html += '<i class="bi bi-diagram-3"></i> <strong>Network Topology Location</strong>';
-    html += '</div>';
-    html += '<div class="card-body">';
+//     const loc = locationResult.location;
+//     let html = '<div class="card mb-3 border-primary">';
+//     html += '<div class="card-header bg-primary text-white">';
+//     html += '<i class="bi bi-diagram-3"></i> <strong>Network Topology Location</strong>';
+//     html += '</div>';
+//     html += '<div class="card-body">';
 
-    // Build hierarchy path
-    let pathParts = [];
-    if (loc.server && loc.server.name) {
-        pathParts.push(`<span class="badge bg-secondary">${loc.server.name}</span>`);
-    }
-    if (loc.olt && loc.olt.name) {
-        pathParts.push(`<span class="badge bg-info">${loc.olt.name}</span>`);
-    }
-    if (loc.odc && loc.odc.name) {
-        pathParts.push(`<span class="badge bg-warning text-dark">${loc.odc.name}</span>`);
-    }
-    if (loc.odp && loc.odp.name) {
-        pathParts.push(`<span class="badge bg-success">${loc.odp.name}</span>`);
-    }
-    if (loc.onu && loc.onu.name) {
-        pathParts.push(`<span class="badge bg-primary">${loc.onu.name}</span>`);
-    }
+//     // Build hierarchy path
+//     let pathParts = [];
+//     if (loc.server && loc.server.name) {
+//         pathParts.push(`<span class="badge bg-secondary">${loc.server.name}</span>`);
+//     }
+//     if (loc.olt && loc.olt.name) {
+//         pathParts.push(`<span class="badge bg-info">${loc.olt.name}</span>`);
+//     }
+//     if (loc.odc && loc.odc.name) {
+//         pathParts.push(`<span class="badge bg-warning text-dark">${loc.odc.name}</span>`);
+//     }
+//     if (loc.odp && loc.odp.name) {
+//         pathParts.push(`<span class="badge bg-success">${loc.odp.name}</span>`);
+//     }
+//     if (loc.onu && loc.onu.name) {
+//         pathParts.push(`<span class="badge bg-primary">${loc.onu.name}</span>`);
+//     }
 
-    if (pathParts.length > 0) {
-        html += '<div class="mb-3">';
-        html += '<strong>Hierarchy Path:</strong><br>';
-        html += pathParts.join(' <i class="bi bi-arrow-right"></i> ');
-        html += '</div>';
-    }
+//     if (pathParts.length > 0) {
+//         html += '<div class="mb-3">';
+//         html += '<strong>Hierarchy Path:</strong><br>';
+//         html += pathParts.join(' <i class="bi bi-arrow-right"></i> ');
+//         html += '</div>';
+//     }
 
-    html += '<table class="table table-sm table-bordered mb-0">';
+//     html += '<table class="table table-sm table-bordered mb-0">';
 
-    // ODP Information
-    if (loc.odp && loc.odp.name) {
-        html += `
-            <tr>
-                <th width="30%"><i class="bi bi-box"></i> ODP</th>
-                <td>
-                    <strong>${loc.odp.name}</strong>
-                    <a href="/map.php?focus_type=odp&focus_id=${loc.odp.id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
+//     // ODP Information
+//     if (loc.odp && loc.odp.name) {
+//         html += `
+//             <tr>
+//                 <th width="30%"><i class="bi bi-box"></i> ODP</th>
+//                 <td>
+//                     <strong>${loc.odp.name}</strong>
+//                     <a href="/map.php?focus_type=odp&focus_id=${loc.odp.id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
+//                         <i class="bi bi-map"></i> View on Map
+//                     </a>
+//                 </td>
+//             </tr>
+//         `;
+//     }
 
-    // Port Number
-    if (loc.onu && loc.onu.port && loc.onu.port !== 'N/A') {
-        html += `
-            <tr>
-                <th><i class="bi bi-plug"></i> Port Number</th>
-                <td><span class="badge bg-info">Port ${loc.onu.port}</span></td>
-            </tr>
-        `;
-    }
+//     // Port Number
+//     if (loc.onu && loc.onu.port && loc.onu.port !== 'N/A') {
+//         html += `
+//             <tr>
+//                 <th><i class="bi bi-plug"></i> Port Number</th>
+//                 <td><span class="badge bg-info">Port ${loc.onu.port}</span></td>
+//             </tr>
+//         `;
+//     }
 
-    // ODC Information
-    if (loc.odc && loc.odc.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-building"></i> ODC</th>
-                <td>
-                    <strong>${loc.odc.name}</strong>
-                    <a href="/map.php?focus_type=odc&focus_id=${loc.odc.id}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
+//     // ODC Information
+//     if (loc.odc && loc.odc.name) {
+//         html += `
+//             <tr>
+//                 <th><i class="bi bi-building"></i> ODC</th>
+//                 <td>
+//                     <strong>${loc.odc.name}</strong>
+//                     <a href="/map.php?focus_type=odc&focus_id=${loc.odc.id}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
+//                         <i class="bi bi-map"></i> View on Map
+//                     </a>
+//                 </td>
+//             </tr>
+//         `;
+//     }
 
-    // OLT Information
-    if (loc.olt && loc.olt.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-hdd-network"></i> OLT</th>
-                <td><strong>${loc.olt.name}</strong></td>
-            </tr>
-        `;
-    }
+//     // OLT Information
+//     if (loc.olt && loc.olt.name) {
+//         html += `
+//             <tr>
+//                 <th><i class="bi bi-hdd-network"></i> OLT</th>
+//                 <td><strong>${loc.olt.name}</strong></td>
+//             </tr>
+//         `;
+//     }
 
-    // Coordinates and Google Maps
-    if (loc.onu && loc.onu.lat && loc.onu.lng) {
-        const lat = parseFloat(loc.onu.lat);
-        const lng = parseFloat(loc.onu.lng);
+//     // Coordinates and Google Maps
+//     if (loc.onu && loc.onu.lat && loc.onu.lng) {
+//         const lat = parseFloat(loc.onu.lat);
+//         const lng = parseFloat(loc.onu.lng);
 
-        // Only show if coordinates are not 0,0
-        if (lat !== 0 && lng !== 0) {
-            const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+//         // Only show if coordinates are not 0,0
+//         if (lat !== 0 && lng !== 0) {
+//             const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
 
-            html += `
-                <tr>
-                    <th><i class="bi bi-geo-alt"></i> Coordinates</th>
-                    <td>
-                        <code>${lat.toFixed(6)}, ${lng.toFixed(6)}</code>
-                        <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
-                            <i class="bi bi-globe"></i> View on Google Maps
-                        </a>
-                        <a href="/map.php?focus_type=onu&focus_id=${loc.onu.id}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
-                            <i class="bi bi-map"></i> View on Network Map
-                        </a>
-                    </td>
-                </tr>
-            `;
-        }
-    }
+//             html += `
+//                 <tr>
+//                     <th><i class="bi bi-geo-alt"></i> Coordinates</th>
+//                     <td>
+//                         <code>${lat.toFixed(6)}, ${lng.toFixed(6)}</code>
+//                         <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
+//                             <i class="bi bi-globe"></i> View on Google Maps
+//                         </a>
+//                         <a href="/map.php?focus_type=onu&focus_id=${loc.onu.id}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
+//                             <i class="bi bi-map"></i> View on Network Map
+//                         </a>
+//                     </td>
+//                 </tr>
+//             `;
+//         }
+//     }
 
-    html += '</table>';
-    html += '</div>';
-    html += '</div>';
+//     html += '</table>';
+//     html += '</div>';
+//     html += '</div>';
 
-    return html;
-}
+//     return html;
+// }
 
 function renderWANDetailsTab(wanDetails) {
     if (!wanDetails || wanDetails.length === 0) {
