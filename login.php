@@ -38,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -47,15 +48,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="/assets/css/style.css">
     <style>
         .login-container {
-            padding-bottom: 80px; /* Give space for footer */
+            padding-bottom: 80px;
+            /* Give space for footer */
         }
     </style>
 </head>
+
 <body>
     <div class="login-container">
         <div class="login-card">
             <div class="login-header">
-                <img src="/assets/img/logo-eratel.svg" alt="GACS Logo" style="width: 180px; height: auto; margin-bottom: 1.5rem;">
+                <img src="/assets/img/logo-eratel.svg" alt="GACS Logo"
+                    style="display:block; width:100%; max-width:320px; height:auto; margin:0 auto 16px;">
             </div>
 
             <?php if ($error): ?>
@@ -70,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="bi bi-person"></i> Username
                     </label>
                     <input type="text" name="username" id="username" class="form-control"
-                           placeholder="Masukkan username" required autofocus>
+                        placeholder="Masukkan username" required autofocus>
                 </div>
 
                 <div class="form-group">
@@ -78,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="bi bi-lock"></i> Password
                     </label>
                     <input type="password" name="password" id="password" class="form-control"
-                           placeholder="Masukkan password" required>
+                        placeholder="Masukkan password" required>
                 </div>
 
                 <button type="submit" class="btn btn-primary w-100">
@@ -95,4 +99,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
+
 </html>
