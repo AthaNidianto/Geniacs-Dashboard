@@ -64,11 +64,11 @@ include __DIR__ . '/views/layouts/header.php';
                         <i class="bi bi-info-circle"></i> Overview
                     </button>
                 </li>
-                <!-- <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="topology-tab" data-bs-toggle="tab" data-bs-target="#topology" type="button" role="tab">
-                        <i class="bi bi-diagram-3"></i> Topology Location
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="status-lan-port" data-bs-toggle="tab" data-bs-target="#status-lan-port" type="button" role="tab">
+                        <i class="bi bi-diagram-3"></i> Status LAN Port
                     </button>
-                </li> -->
+                </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="wan-tab" data-bs-toggle="tab" data-bs-target="#wan" type="button" role="tab">
                         <i class="bi bi-globe"></i> WAN Connections <span id="wan-count-badge" class="badge bg-primary ms-1">0</span>

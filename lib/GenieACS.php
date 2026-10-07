@@ -734,6 +734,54 @@ class GenieACS
             }
         }
 
+        // LAN Ethernet ports (status port LAN di ONU)
+        $lanPorts = [];
+        $toNum = function ($v) {
+            return ($v !== null && is_numeric($v)) ? (float)$v : null;
+        };
+        $readLan = function ($base, $tr181) use ($getParam, $isTruthy, $toNum) {
+            $enableRaw = $getParam("{$base}.Enable");
+            $status = $getParam("{$base}.Status");
+            if ($enableRaw === null && $status === null) {
+                return null; // port tidak ada di ONU ini
+            }
+            $bitRate = $tr181 ? $getParam("{$base}.CurrentBitRate") : $getParam("{$base}.MaxBitRate");
+            $stats = "{$base}.Stats";
+            return [
+                'enabled' => ($enableRaw === null) ? true : $isTruthy($enableRaw),
+                'status' => ($status === null) ? 'Unknown' : (string)$status,
+                'bit_rate' => ($bitRate === null) ? null : (string)$bitRate,
+                'duplex' => $getParam("{$base}.DuplexMode"),
+                'mac' => $getParam("{$base}.MACAddress"),
+                'name' => $getParam("{$base}.Name"),
+                'bytes_sent' => $toNum($getParam("{$stats}.BytesSent")),
+                'bytes_received' => $toNum($getParam("{$stats}.BytesReceived")),
+                'packets_sent' => $toNum($getParam("{$stats}.PacketsSent")),
+                'packets_received' => $toNum($getParam("{$stats}.PacketsReceived")),
+                'errors_sent' => $toNum($getParam("{$stats}.ErrorsSent")),
+                'errors_received' => $toNum($getParam("{$stats}.ErrorsReceived")),
+            ];
+        };
+
+        for ($p = 1; $p <= 8; $p++) {
+            $port = $readLan("InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{$p}", false);
+            if ($port !== null) {
+                $port['index'] = $p;
+                $lanPorts[] = $port;
+            }
+        }
+        // TR-181 kalau tidak ada TR-098
+        if (empty($lanPorts)) {
+            for ($p = 1; $p <= 8; $p++) {
+                $port = $readLan("Device.Ethernet.Interface.{$p}", true);
+                if ($port !== null) {
+                    $port['index'] = $p;
+                    $lanPorts[] = $port;
+                }
+            }
+        }
+        $data['lan_ports'] = $lanPorts;
+
         // Optical info
         $rxPower = $getParam('VirtualParameters.RXPower') ??
             $getParam('InternetGatewayDevice.WANDevice.1.X_CT-COM_EponInterfaceConfig.RXPower') ??
