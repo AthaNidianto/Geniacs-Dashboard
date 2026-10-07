@@ -1318,51 +1318,37 @@ async function syncRbTags() {
         return;
     }
 
-    // Siapkan penampung untuk mengelompokkan ID perangkat yang belum punya tag
+    // Daftar RouterBoard: nama tag -> awalan IP TR-069. Tambah RB baru cukup di sini.
     const rbMapping = {
-        'RB_56c': { prefix: '10.123.', ids: [] },
+        'RB_56c':     { prefix: '10.123.', ids: [] },
         'RB_Klaling': { prefix: '10.124.', ids: [] },
-        'RB_Sosok': { prefix: '10.125.', ids: [] },
+        'RB_Sosok':   { prefix: '10.125.', ids: [] },
         'RB_Payaman': { prefix: '10.126.', ids: [] },
-        'RB_Bram': { prefix: '10.127.', ids: [] },
+        'RB_Bram':    { prefix: '10.127.', ids: [] },
         'RB_Cendono': { prefix: '10.128.', ids: [] },
         'RB_Buyutan': { prefix: '10.129.', ids: [] }
     };
-
-
+    const rbTagNames = Object.keys(rbMapping).map(n => n.toLowerCase());
 
     // Scan semua perangkat
     allDevices.forEach(device => {
         const ip = extractIP(device.ip_tr069);
         if (ip === 'N/A') return;
 
-        // Cek apakah perangkat sudah memiliki tag RB (mengurangi beban API)
+        // Lewati perangkat yang sudah punya salah satu tag RB
         const tags = device.tags || [];
-        const hasRbTag = tags.some(t => ['rb_56c', 'rb_klaling', 'rb_sosok'].includes(t.toLowerCase()));
+        const hasRbTag = tags.some(t => rbTagNames.includes(String(t).toLowerCase()));
+        if (hasRbTag) return;
 
-        if (!hasRbTag) {
-            // Kelompokkan ID berdasarkan awalan IP
-            if (ip.startsWith(rbMapping['RB_56c'].prefix)) {
-                rbMapping['RB_56c'].ids.push(device.device_id);
-            } else if (ip.startsWith(rbMapping['RB_Klaling'].prefix)) {
-                rbMapping['RB_Klaling'].ids.push(device.device_id);
-            } else if (ip.startsWith(rbMapping['RB_Sosok'].prefix)) {
-                rbMapping['RB_Sosok'].ids.push(device.device_id);
-            } else if (ip.startsWith(rbMapping['RB_Payaman'].prefix)) {
-                rbMapping['RB_Payaman'].ids.push(device.device_id);
-            } else if (ip.startsWith(rbMapping['RB_Bram'].prefix)) {
-                rbMapping['RB_Bram'].ids.push(device.device_id);
-            }
-            else if (ip.startsWith(rbMapping['RB_Cendono'].prefix)) {
-            }
-            else if (ip.startsWith(rbMapping['RB_Buyutan'].prefix)) {
-                rbMapping['RB_Buyutan'].ids.push(device.device_id);
+        for (const [tagName, data] of Object.entries(rbMapping)) {
+            if (ip.startsWith(data.prefix)) {
+                data.ids.push(device.device_id);
+                break;
             }
         }
     });
 
-    // Hitung total device yang butuh di-tag
-    const totalToSync = rbMapping['RB_56c'].ids.length + rbMapping['RB_Klaling'].ids.length + rbMapping['RB_Sosok'].ids.length + rbMapping['RB_Payaman'].ids.length + rbMapping['RB_Bram'].ids.length + rbMapping['RB_Cendono'].ids.length + rbMapping['RB_Buyutan'].ids.length;
+    const totalToSync = Object.values(rbMapping).reduce((sum, d) => sum + d.ids.length, 0);
 
     if (totalToSync === 0) {
         showToast('Semua device sudah memiliki Tag RB. Tidak ada yang perlu disinkronisasi.', 'info');
@@ -1377,23 +1363,43 @@ async function syncRbTags() {
     showLoading();
 
     try {
+        let okTotal = 0;
+        let failTotal = 0;
+        const failedTags = [];
+
         // Eksekusi API bulk-tag untuk setiap kelompok RB
         for (const [tagName, data] of Object.entries(rbMapping)) {
-            if (data.ids.length > 0) {
-                await fetchAPI('/api/bulk-tag.php', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'add',
-                        device_ids: data.ids,
-                        tag: tagName
-                    })
-                });
+            if (data.ids.length === 0) continue;
+
+            const res = await fetchAPI('/api/bulk-tag.php', {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'add',
+                    device_ids: data.ids,
+                    tag: tagName
+                }),
+                timeout: 120000
+            });
+
+            if (res && res.success) {
+                okTotal += (res.success_count !== undefined ? res.success_count : data.ids.length);
+                failTotal += (res.fail_count || 0);
+            } else {
+                failTotal += data.ids.length;
+                failedTags.push(tagName);
+                console.error('[AUTO-TAG] Gagal untuk', tagName, res);
             }
         }
 
         hideLoading();
-        showToast(`Berhasil menempelkan tag pada ${totalToSync} device!`, 'success');
-        loadDevices(); // Muat ulang tabel agar badge birunya langsung muncul
+
+        if (failTotal === 0) {
+            showToast(`Berhasil menempelkan tag pada ${okTotal} device!`, 'success');
+        } else {
+            showToast(`Tag terpasang di ${okTotal} device, gagal ${failTotal}` +
+                (failedTags.length ? ` (${failedTags.join(', ')})` : ''), 'warning', 6000);
+        }
+        loadDevices(); // Muat ulang tabel agar badge tag langsung muncul
 
     } catch (error) {
         hideLoading();
