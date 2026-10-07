@@ -2513,6 +2513,11 @@ function renderLanPortsTab(ports) {
                 <td>${oper}</td>
                 <td><code>${escHtmlLan(port.mac || '-')}</code></td>
                 <td><small>${formatLanBytes(port.bytes_sent)} / ${formatLanBytes(port.bytes_received)}</small></td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-outline-primary" onclick="openEditLanPort(${port.index})" title="Edit Port ${port.index}">
+                        <i class="bi bi-pencil-square"></i>
+                    </button>
+                </td>
             </tr>`;
     });
 
@@ -2530,7 +2535,7 @@ function renderLanPortsTab(ports) {
                 <thead class="table-light">
                     <tr>
                         <th>Port</th><th>Status</th><th>Speed</th><th>Duplex</th>
-                        <th>Port Power</th><th>Operational</th><th>MAC Address</th><th>Sent / Received</th>
+                        <th>Port Power</th><th>Operational</th><th>MAC Address</th><th>Sent / Received</th><th>Aksi</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -2556,5 +2561,136 @@ async function refreshLanPorts() {
     } else {
         showToast((result && result.message) || 'Gagal mengambil status port', 'danger');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh'; }
+    }
+}
+
+
+// ---------- Edit port LAN (enable/disable, kecepatan, duplex) ----------
+function ensureLanPortModal() {
+    if (document.getElementById('editLanPortModal')) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+    <div class="modal fade" id="editLanPortModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-ethernet"></i> Edit <span id="lan-edit-title">Port</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="lan-edit-index">
+                    <div class="mb-3">
+                        <label class="form-label">Port Power</label>
+                        <select class="form-select" id="lan-edit-enabled" onchange="onLanPowerChange()">
+                            <option value="1">Enable</option>
+                            <option value="0">Disable</option>
+                        </select>
+                    </div>
+                    <div id="lan-edit-warning" class="alert alert-warning" style="display:none;">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Port dimatikan: perangkat pelanggan yang tersambung ke port ini akan putus.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Kecepatan (Speed)</label>
+                        <select class="form-select" id="lan-edit-speed">
+                            <option value="Auto">Auto-Negotiation</option>
+                            <option value="10">10 Mbps</option>
+                            <option value="100">100 Mbps</option>
+                            <option value="1000">1000 Mbps (1 Gbps)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Duplex</label>
+                        <select class="form-select" id="lan-edit-duplex">
+                            <option value="Auto">Automatic</option>
+                            <option value="Half">Half Duplex</option>
+                            <option value="Full">Full Duplex</option>
+                        </select>
+                    </div>
+                    <small class="text-muted">Hanya nilai yang kamu ubah yang dikirim ke ONU. Beberapa ONU menolak perubahan kecepatan atau duplex.</small>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-primary" id="lan-edit-save" onclick="confirmUpdateLanPort()">
+                        <i class="bi bi-check-lg"></i> Simpan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    document.body.appendChild(wrap.firstElementChild);
+}
+
+function onLanPowerChange() {
+    const off = document.getElementById('lan-edit-enabled').value === '0';
+    document.getElementById('lan-edit-warning').style.display = off ? 'block' : 'none';
+}
+
+function openEditLanPort(portIndex) {
+    const ports = (currentLanDevice && currentLanDevice.lan_ports) || [];
+    const port = ports.find(p => Number(p.index) === Number(portIndex));
+    if (!port) { showToast('Data port tidak ditemukan', 'danger'); return; }
+
+    ensureLanPortModal();
+    document.getElementById('lan-edit-title').textContent = 'Port ' + port.index;
+    document.getElementById('lan-edit-index').value = port.index;
+    document.getElementById('lan-edit-enabled').value = port.enabled ? '1' : '0';
+
+    const br = String(port.bit_rate || 'Auto');
+    const speedSel = document.getElementById('lan-edit-speed');
+    speedSel.value = ['10', '100', '1000'].includes(br) ? br : 'Auto';
+
+    const dx = String(port.duplex || 'Auto').toLowerCase();
+    document.getElementById('lan-edit-duplex').value = dx === 'full' ? 'Full' : (dx === 'half' ? 'Half' : 'Auto');
+
+    // simpan nilai awal supaya hanya yang berubah yang dikirim
+    const modalEl = document.getElementById('editLanPortModal');
+    modalEl.dataset.origEnabled = port.enabled ? '1' : '0';
+    modalEl.dataset.origSpeed = speedSel.value;
+    modalEl.dataset.origDuplex = document.getElementById('lan-edit-duplex').value;
+
+    onLanPowerChange();
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
+async function confirmUpdateLanPort() {
+    const modalEl = document.getElementById('editLanPortModal');
+    const portIndex = parseInt(document.getElementById('lan-edit-index').value, 10);
+    const enabled = document.getElementById('lan-edit-enabled').value;
+    const speed = document.getElementById('lan-edit-speed').value;
+    const duplex = document.getElementById('lan-edit-duplex').value;
+
+    const payload = { device_id: deviceId, port_index: portIndex };
+    if (enabled !== modalEl.dataset.origEnabled) payload.enabled = (enabled === '1');
+    if (speed !== modalEl.dataset.origSpeed) payload.speed = speed;
+    if (duplex !== modalEl.dataset.origDuplex) payload.duplex = duplex;
+
+    if (Object.keys(payload).length === 2) {
+        showToast('Tidak ada perubahan untuk disimpan', 'info');
+        return;
+    }
+    if (payload.enabled === false && !confirm('Matikan Port ' + portIndex + '? Perangkat yang tersambung akan putus.')) {
+        return;
+    }
+
+    const btn = document.getElementById('lan-edit-save');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Mengirim...';
+
+    const result = await fetchAPI('/api/update-lan-port.php', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        timeout: 30000
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg"></i> Simpan';
+
+    if (result && result.success) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        showToast(result.message || 'Perintah dikirim', 'success', 5000);
+        setTimeout(() => loadDeviceDetail(true), 4000);
+    } else {
+        showToast((result && result.message) || 'Gagal mengirim perintah', 'danger', 5000);
     }
 }
