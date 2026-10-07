@@ -1350,6 +1350,13 @@ async function syncRbTags() {
                 rbMapping['RB_Sosok'].ids.push(device.device_id);
             } else if (ip.startsWith(rbMapping['RB_Payaman'].prefix)) {
                 rbMapping['RB_Payaman'].ids.push(device.device_id);
+            } else if (ip.startsWith(rbMapping['RB_Bram'].prefix)) {
+                rbMapping['RB_Bram'].ids.push(device.device_id);
+            }
+            else if (ip.startsWith(rbMapping['RB_Cendono'].prefix)) {
+            }
+            else if (ip.startsWith(rbMapping['RB_Buyutan'].prefix)) {
+                rbMapping['RB_Buyutan'].ids.push(device.device_id);
             }
         }
     });
