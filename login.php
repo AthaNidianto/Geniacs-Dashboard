@@ -59,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="login-card">
             <div class="login-header">
                 <img src="/assets/img/logo-eratel.svg" alt="GACS Logo"
-                    style="display:block; width:100%; max-width:320px; height:auto; margin:0 auto 16px;">
+                    style="display:block; width:100%; max-width:320px; height:auto; margin:0 auto -80px;">
             </div>
 
             <?php if ($error): ?>
