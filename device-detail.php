@@ -93,10 +93,10 @@ include __DIR__ . '/views/layouts/header.php';
                     <div id="overview-content"></div>
                 </div>
 
-                <!-- Topology Location Tab -->
+                <!-- Topology Location Tab
                 <div class="tab-pane fade" id="topology" role="tabpanel">
                     <div id="topology-content"></div>
-                </div>
+                </div> -->
 
                 <!-- WAN Connections Tab -->
                 <div class="tab-pane fade" id="wan" role="tabpanel">
