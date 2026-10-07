@@ -2570,7 +2570,7 @@ function ensureLanPortModal() {
     if (document.getElementById('editLanPortModal')) return;
     const wrap = document.createElement('div');
     wrap.innerHTML = `
-    <div class="modal fade" id="editLanPortModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="editLanPortModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="false">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
@@ -2650,7 +2650,7 @@ function openEditLanPort(portIndex) {
     modalEl.dataset.origDuplex = document.getElementById('lan-edit-duplex').value;
 
     onLanPowerChange();
-    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: false }).show();
 }
 
 async function confirmUpdateLanPort() {
