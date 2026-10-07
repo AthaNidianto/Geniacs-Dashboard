@@ -46,6 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="icon" href="/favicon.ico?v=1" sizes="any">
+    <link rel="icon" href="/assets/img/favicon-32.png?v=1" type="image/png" sizes="32x32">
+    <link rel="icon" href="/assets/img/favicon-64.png?v=1" type="image/png" sizes="64x64">
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png?v=1">
     <style>
         .login-container {
             padding-bottom: 80px;

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,8 +16,13 @@
     <link rel="stylesheet" href="/assets/css/style.css?v=<?php echo time(); ?>">
     <!-- Client-Side Logger -->
     <script src="/assets/js/client-logger.js?v=<?php echo time(); ?>"></script>
-    <link rel="icon" href="/assets/img/logo-eratel.svg" type="image/x-icon">
+    
+    <link rel="icon" href="/favicon.ico?v=1" sizes="any">
+    <link rel="icon" href="/assets/img/favicon-32.png?v=1" type="image/png" sizes="32x32">
+    <link rel="icon" href="/assets/img/favicon-64.png?v=1" type="image/png" sizes="64x64">
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png?v=1">
 </head>
+
 <body>
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
