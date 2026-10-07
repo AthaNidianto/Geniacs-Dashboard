@@ -65,8 +65,8 @@ include __DIR__ . '/views/layouts/header.php';
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="status-lan-port" data-bs-toggle="tab" data-bs-target="#status-lan-port" type="button" role="tab">
-                        <i class="bi bi-diagram-3"></i> Status LAN Port
+                    <button class="nav-link" id="lan-tab" data-bs-toggle="tab" data-bs-target="#lan" type="button" role="tab">
+                        <i class="bi bi-diagram-3"></i> Status LAN Port <span id="lan-count-badge" class="badge bg-primary ms-1">0</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -93,10 +93,10 @@ include __DIR__ . '/views/layouts/header.php';
                     <div id="overview-content"></div>
                 </div>
 
-                <!-- Topology Location Tab
-                <div class="tab-pane fade" id="topology" role="tabpanel">
-                    <div id="topology-content"></div>
-                </div> -->
+                <!-- Status LAN Port Tab -->
+                <div class="tab-pane fade" id="lan" role="tabpanel">
+                    <div id="lan-content"></div>
+                </div>
 
                 <!-- WAN Connections Tab -->
                 <div class="tab-pane fade" id="wan" role="tabpanel">
