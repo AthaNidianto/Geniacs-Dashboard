@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="/assets/css/style.css?v=<?php echo time(); ?>">
     <!-- Client-Side Logger -->
     <script src="/assets/js/client-logger.js?v=<?php echo time(); ?>"></script>
+    <link rel="icon" href="/assets/img/logo-eratel.svg" type="image/x-icon">
 </head>
 <body>
     <!-- Sidebar -->
