@@ -1234,7 +1234,15 @@ function getRbFilteredDevices() {
     const rbFilter = rbElement ? rbElement.value.toLowerCase() : 'all';
     if (rbFilter === 'all') return allDevices;
 
-    const prefixMap = { '56c': '10.123.', 'klaling': '10.124.', 'sosok': '10.125.', 'payaman': '10.126.' };
+    const prefixMap = { 
+        '56c': '10.123.', 
+        'klaling': '10.124.', 
+        'sosok': '10.125.', 
+        'payaman': '10.126.', 
+        'bram': '10.127.', 
+        'cendono' : '10.128.',
+        'buyutan' : '10.129.',
+    };
     const prefix = prefixMap[rbFilter];
     if (!prefix) return [];
 
@@ -1315,7 +1323,10 @@ async function syncRbTags() {
         'RB_56c': { prefix: '10.123.', ids: [] },
         'RB_Klaling': { prefix: '10.124.', ids: [] },
         'RB_Sosok': { prefix: '10.125.', ids: [] },
-        'RB_Payaman': { prefix: '10.126.', ids: [] } 
+        'RB_Payaman': { prefix: '10.126.', ids: [] },
+        'RB_Bram': { prefix: '10.127.', ids: [] },
+        'RB_Cendono': { prefix: '10.128.', ids: [] },
+        'RB_Buyutan': { prefix: '10.129.', ids: [] }
     };
 
 

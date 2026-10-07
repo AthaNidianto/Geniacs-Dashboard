@@ -54,6 +54,9 @@ include __DIR__ . '/views/layouts/header.php';
                                 <option value="klaling">RB Klaling</option>
                                 <option value="sosok">RB Sosok</option>
                                 <option value="payaman">RB Payaman</option>
+                                <option value="bram">RB Bram</option>
+                                <option value="cendono">RB Cendono</option>
+                                <option value="buyutan">RB Buyutan</option>
                             </select>
                         </div>
 
