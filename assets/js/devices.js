@@ -1362,7 +1362,7 @@ async function syncRbTags() {
     });
 
     // Hitung total device yang butuh di-tag
-    const totalToSync = rbMapping['RB_56c'].ids.length + rbMapping['RB_Klaling'].ids.length + rbMapping['RB_Sosok'].ids.length;
+    const totalToSync = rbMapping['RB_56c'].ids.length + rbMapping['RB_Klaling'].ids.length + rbMapping['RB_Sosok'].ids.length + rbMapping['RB_Payaman'].ids.length + rbMapping['RB_Bram'].ids.length + rbMapping['RB_Cendono'].ids.length + rbMapping['RB_Buyutan'].ids.length;
 
     if (totalToSync === 0) {
         showToast('Semua device sudah memiliki Tag RB. Tidak ada yang perlu disinkronisasi.', 'info');
