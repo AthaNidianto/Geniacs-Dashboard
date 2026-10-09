@@ -349,7 +349,7 @@ include __DIR__ . '/views/layouts/header.php';
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     initMap();
-    startAutoRefresh();
+    // Auto-refresh peta dimatikan: data dimuat saat halaman dibuka
 
     // Check for focus parameters in URL
     const urlParams = new URLSearchParams(window.location.search);

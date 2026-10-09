@@ -42,7 +42,7 @@ let visibleLayers = {
     onu: true
 };
 let autoRefreshInterval = null;
-let autoRefreshEnabled = true;
+let autoRefreshEnabled = false; // auto-refresh dimatikan
 let locationPointer = null; // Temporary marker for location selection
 let pointerVisible = false; // Track pointer visibility state
 let currentEditingPolyline = null; // Track currently editing polyline

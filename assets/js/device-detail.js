@@ -2400,8 +2400,7 @@ function stopHotspotTrafficMonitoring() {
 
 document.addEventListener('DOMContentLoaded', function() {
     loadDeviceDetail(); // Initial load (manual, scroll to top)
-    // Auto refresh every 30 seconds (preserve scroll position)
-    setInterval(() => loadDeviceDetail(true), 30000);
+    // Auto-refresh dimatikan: data hanya dimuat saat halaman dibuka / setelah aksi
 
     // Auto-start/stop hotspot monitoring based on Connected Devices tab visibility
     const allTabs = document.querySelectorAll('[data-bs-toggle="tab"]');

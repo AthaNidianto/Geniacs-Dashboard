@@ -1182,8 +1182,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (window.GENIEACS_CONFIGURED) loadDevices(); // Initial load (manual)
 
-    // Start auto-refresh timer
-    if (window.GENIEACS_CONFIGURED) autoRefreshTimer = setInterval(() => loadDevices(true), 60000); // Auto-refresh every 60 seconds
+    // Auto-refresh dimatikan: data hanya dimuat saat halaman dibuka / tombol refresh ditekan
 
     // Keyboard shortcuts for pagination (Left/Right arrow keys)
     document.addEventListener('keydown', function(e) {
@@ -1207,22 +1206,6 @@ window.addEventListener('beforeunload', function() {
     if (autoRefreshTimer) {
         clearInterval(autoRefreshTimer);
         autoRefreshTimer = null;
-    }
-});
-
-// Also cleanup on page visibility change (when tab becomes hidden)
-document.addEventListener('visibilitychange', function() {
-    if (document.hidden) {
-        // Page is hidden, stop auto-refresh to save resources
-        if (autoRefreshTimer) {
-            clearInterval(autoRefreshTimer);
-            autoRefreshTimer = null;
-        }
-    } else {
-        // Page is visible again, restart auto-refresh
-        if (!autoRefreshTimer) {
-            if (window.GENIEACS_CONFIGURED) autoRefreshTimer = setInterval(() => loadDevices(true), 60000);
-        }
     }
 });
 
