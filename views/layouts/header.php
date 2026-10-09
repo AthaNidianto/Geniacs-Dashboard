@@ -25,6 +25,7 @@
 
 <body>
     <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">
             <img src="/assets/img/eratel.svg" alt="Eratel">
