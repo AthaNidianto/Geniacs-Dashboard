@@ -19,10 +19,12 @@
     --gray-200: #E2E8F0;             /* Medium Light Gray */
     --gray-300: #CBD5E1;             /* Medium Gray */
 
-    --sidebar-bg: #1E293B;           /* Dark Professional Sidebar */
-    --sidebar-hover: #334155;        /* Sidebar Hover */
+    /* --sidebar-bg: #1E293B;           Dark Professional Sidebar */
+    --sidebar-bg: #1A1E4A; 
+    --sidebar-hover: #262B66;
+    /* --sidebar-hover: #334155;        Sidebar Hover */
     --topbar-bg: #FFFFFF;            /* Clean White Topbar */
-
+--sidebar-accent: #F56F28; 
     --sidebar-width: 250px;
     --sidebar-collapsed-width: 70px;
 }
@@ -72,8 +74,37 @@ body {
 .sidebar-header {
     padding: 1.5rem 1rem;
     text-align: center;
+    background: #12153A;                              /* tambahan baris ini */
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     transition: all 0.3s ease;
+}
+
+.sidebar-logo {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 0.6rem;
+    background: #fff;
+    border-radius: 14px;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    transition: all 0.3s ease;
+}
+
+.sidebar-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.sidebar.collapsed .sidebar-logo {
+    width: 40px;
+    height: 40px;
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 0;
 }
 
 .sidebar-toggle {
@@ -164,7 +195,7 @@ body {
 .sidebar-menu a.active {
     background: var(--sidebar-hover);
     color: white;
-    border-left: 4px solid var(--primary-color);
+    border-left: 4px solid var(--sidebar-accent);   /* sebelumnya --primary-color */
     padding-left: calc(1.25rem - 4px);
 }
 

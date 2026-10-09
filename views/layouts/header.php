@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="/assets/css/style.css?v=<?php echo time(); ?>">
     <!-- Client-Side Logger -->
     <script src="/assets/js/client-logger.js?v=<?php echo time(); ?>"></script>
-    
+
     <link rel="icon" href="/favicon.ico?v=1" sizes="any">
     <link rel="icon" href="/assets/img/favicon-32.png?v=1" type="image/png" sizes="32x32">
     <link rel="icon" href="/assets/img/favicon-64.png?v=1" type="image/png" sizes="64x64">
@@ -25,49 +25,49 @@
 
 <body>
     <!-- Sidebar -->
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <i class="bi bi-hdd-network" style="font-size: 2.5rem; margin-bottom: 0.5rem;"></i>
-            <h3 style="font-size: 1rem; line-height: 1.3;"><?php echo APP_NAME; ?></h3>
+    <div class="sidebar-header">
+        <div class="sidebar-logo">
+            <img src="/assets/img/eratel.svg" alt="Eratel">
         </div>
-
-        <ul class="sidebar-menu">
-            <li>
-                <a href="/dashboard.php" class="<?php echo ($currentPage ?? '') === 'dashboard' ? 'active' : ''; ?>" data-tooltip="Dashboard">
-                    <i class="bi bi-speedometer2"></i>
-                    <span>Dashboard</span>
-                </a>
-            </li>
-            <li>
-                <a href="/devices.php" class="<?php echo ($currentPage ?? '') === 'devices' ? 'active' : ''; ?>" data-tooltip="Devices">
-                    <i class="bi bi-router"></i>
-                    <span>Devices</span>
-                </a>
-            </li>
-            <!-- <li>
+        <h3 style="font-size: 1rem; line-height: 1.3;"><?php echo APP_NAME; ?></h3>
+    </div>
+    <ul class="sidebar-menu">
+        <li>
+            <a href="/dashboard.php" class="<?php echo ($currentPage ?? '') === 'dashboard' ? 'active' : ''; ?>" data-tooltip="Dashboard">
+                <i class="bi bi-speedometer2"></i>
+                <span>Dashboard</span>
+            </a>
+        </li>
+        <li>
+            <a href="/devices.php" class="<?php echo ($currentPage ?? '') === 'devices' ? 'active' : ''; ?>" data-tooltip="Devices">
+                <i class="bi bi-router"></i>
+                <span>Devices</span>
+            </a>
+        </li>
+        <!-- <li>
                 <a href="/map.php" class="<?php echo ($currentPage ?? '') === 'map' ? 'active' : ''; ?>" data-tooltip="Map">
                     <i class="bi bi-diagram-3"></i>
                     <span>Map</span>
                 </a>
             </li> -->
-            <li>
-                <a href="/configuration.php" class="<?php echo ($currentPage ?? '') === 'configuration' ? 'active' : ''; ?>" data-tooltip="Configuration">
-                    <i class="bi bi-gear"></i>
-                    <span>Configuration</span>
-                </a>
-            </li>
-            <li>
-                <a href="/logout.php" data-tooltip="Logout">
-                    <i class="bi bi-box-arrow-right"></i>
-                    <span>Logout</span>
-                </a>
-            </li>
-        </ul>
+        <li>
+            <a href="/configuration.php" class="<?php echo ($currentPage ?? '') === 'configuration' ? 'active' : ''; ?>" data-tooltip="Configuration">
+                <i class="bi bi-gear"></i>
+                <span>Configuration</span>
+            </a>
+        </li>
+        <li>
+            <a href="/logout.php" data-tooltip="Logout">
+                <i class="bi bi-box-arrow-right"></i>
+                <span>Logout</span>
+            </a>
+        </li>
+    </ul>
 
-        <!-- Toggle Button -->
-        <button class="sidebar-toggle" id="sidebarToggle" type="button">
-            <i class="bi bi-chevron-left"></i>
-        </button>
+    <!-- Toggle Button -->
+    <button class="sidebar-toggle" id="sidebarToggle" type="button">
+        <i class="bi bi-chevron-left"></i>
+    </button>
     </div>
 
     <!-- Main Content -->
