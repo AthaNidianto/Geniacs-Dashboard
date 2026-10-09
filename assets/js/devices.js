@@ -93,7 +93,7 @@ async function loadDevices(isAutoRefresh = false) {
     allDevices = [];
     let skip = 0;
     const chunkSize = 1000;
-    const parallelChunks = 3;   // chunk sisanya diminta bersamaan, bukan satu-satu
+    const parallelChunks = 1;   // 1 = berurutan. Paralel (3) terbukti lebih lambat: server (PHP/GenieACS) memproses serentak dengan melambat
     let hasMore = true;
 
     try {
