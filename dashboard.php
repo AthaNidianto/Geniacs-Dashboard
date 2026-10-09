@@ -61,71 +61,21 @@ include __DIR__ . '/views/layouts/header.php';
         </div>
     </div>
 
-<!-- 4 Grid Charts -->
+<!-- Riwayat CPE Online/Offline (garis + area) -->
 <div class="row mb-4">
-    <!-- 1. Device Overview -->
-    <div class="col-lg-6 mb-4">
-        <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-bar-chart"></i> Device Overview
-                <button class="btn btn-sm btn-primary float-end" onclick="loadDashboardData()">
-                    <i class="bi bi-arrow-clockwise"></i> Refresh
-                </button>
-            </div>
-            <div class="card-body d-flex align-items-center justify-content-center">
-                <div style="width: 100%; max-width: 300px;">
-                    <canvas id="deviceChart"></canvas>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-end gap-3 mb-1" style="font-size: 12px;">
+                    <span><i class="bi bi-circle-fill" style="color: rgb(28, 180, 120); font-size: 9px;"></i> Online</span>
+                    <span><i class="bi bi-circle-fill" style="color: rgb(231, 74, 59); font-size: 9px;"></i> Offline</span>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 2. Uplink Signal -->
-    <div class="col-lg-6 mb-4">
-        <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-reception-4"></i> Uplink Signal Strength
-                <button class="btn btn-sm btn-primary float-end" onclick="loadUplinkData()">
-                    <i class="bi bi-arrow-clockwise"></i> Refresh
-                </button>
-            </div>
-            <div class="card-body d-flex align-items-center justify-content-center">
-                <div style="width: 100%; max-width: 300px;">
-                    <canvas id="uplinkChart"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 3. Manufacturer (Merek) -->
-    <div class="col-lg-6 mb-4">
-        <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-diagram-3"></i> Merek Perangkat
-                <button class="btn btn-sm btn-primary float-end" onclick="loadDashboardData()">
-                    <i class="bi bi-arrow-clockwise"></i> Refresh
-                </button>
-            </div>
-            <div class="card-body d-flex align-items-center justify-content-center">
-                <div style="width: 100%; max-width: 300px;">
-                    <canvas id="manufacturerChart"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 4. Tipe PON -->
-    <div class="col-lg-6 mb-4">
-        <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-hdd-network"></i> Tipe Teknologi PON
-                <button class="btn btn-sm btn-primary float-end" onclick="loadDashboardData()">
-                    <i class="bi bi-arrow-clockwise"></i> Refresh
-                </button>
-            </div>
-            <div class="card-body d-flex align-items-center justify-content-center">
-                <div style="width: 100%; max-width: 300px;">
-                    <canvas id="ponTypeChart"></canvas>
+                <div id="historyChartWrap" style="position: relative; width: 100%; height: 320px;">
+                    <canvas id="historyChart"></canvas>
+                    <div id="historyEmpty" class="text-muted text-center" style="display:none; position:absolute; inset:0; padding-top:110px;">
+                        <i class="bi bi-hourglass-split"></i> Riwayat baru mulai dikumpulkan.<br>
+                        <small>Grafik terisi seiring waktu (satu titik tiap 30 menit).</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -193,13 +143,11 @@ include __DIR__ . '/views/layouts/header.php';
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-let deviceChart = null;
-let uplinkChart = null;
 let dashboardFetchInProgress = false;
-let uplinkFetchInProgress = false;
 let recentDevicesFetchInProgress = false;
-let manufacturerChart = null;
-let ponTypeChart = null;
+let historyChart = null;
+const historyRange = '10d'; // data per 30 menit, maksimal 10 hari terakhir
+let historyFetchInProgress = false;
 
 async function loadDashboardData() {
     // Prevent concurrent requests
@@ -223,10 +171,6 @@ async function loadDashboardData() {
             const onlinePercentage = stats.total > 0 ? Math.round((stats.online / stats.total) * 100) : 0;
             document.getElementById('stat-uptime').textContent = onlinePercentage + '%';
 
-            // Update chart
-            updateChart(stats);
-            if (stats.manufacturers) updateManufacturerChart(stats.manufacturers);
-            if (stats.pon_types) updatePonTypeChart(stats.pon_types);
         } else {
             if (result && result.error !== 'timeout') {
                 showToast('Gagal memuat data dashboard', 'danger');
@@ -241,185 +185,286 @@ async function loadDashboardData() {
     }
 }
 
-function updateChart(stats) {
-    const ctx = document.getElementById('deviceChart').getContext('2d');
+// ---------------------------------------------------------------------------
+// GRAFIK RIWAYAT: garis halus + area hijau (online) dan merah (offline)
+// ---------------------------------------------------------------------------
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const HISTORY_STEP = 1800;               // satu titik data tiap 30 menit (jam genap)
+const HISTORY_LABEL_PX = 72;             // lebar minimal per label X supaya tidak rapat
+const HISTORY_MIN_SPAN = 24 * 3600;      // jendela minimal 24 jam (sisi kiri kosong kalau data belum ada)
+const HISTORY_MAX_SLOTS = 480;           // batas tampilan 10 hari
+const HISTORY_TICK_STEPS = [4, 8, 12, 24, 48].map(h => h * 3600);  // label tiap 4 jam, melebar kalau data panjang
 
-    if (deviceChart) {
-        deviceChart.destroy();
-    }
+let historyTickStep = HISTORY_TICK_STEPS[0];
+let historyPoints = [];
 
-    deviceChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Online', 'Offline'],
-            datasets: [{
-                data: [stats.online, stats.offline],
-                backgroundColor: [
-                    'rgba(28, 200, 138, 0.8)',
-                    'rgba(231, 74, 59, 0.8)'
-                ],
-                borderColor: [
-                    'rgba(28, 200, 138, 1)',
-                    'rgba(231, 74, 59, 1)'
-                ],
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-                legend: {
-                    position: 'bottom'
-                },
-                title: {
-                    display: true,
-                    text: 'Device Status Distribution'
-                }
-            }
-        }
-    });
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+// Label sumbu dan tooltip: "Fri 08:30" (24 jam)
+function historyTickLabel(value) {
+    const d = new Date(value * 1000);
+    return DAY_NAMES[d.getDay()] + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
 }
 
-async function loadUplinkData() {
-    // Prevent concurrent requests
-    if (uplinkFetchInProgress) {
-        console.debug('[DASHBOARD] Uplink fetch already in progress, skipping...');
+// Jendela waktu: ujung kanan = slot 30 menit saat ini, jadi grafik bergeser ke kiri seiring waktu.
+// Lebar jendela = 24 jam, atau selebar data kalau sudah lebih panjang (maks 10 hari).
+function historyWindow(points, width) {
+    const nowSlot = Math.floor(Date.now() / 1000 / HISTORY_STEP) * HISTORY_STEP;
+    const max = Math.max(nowSlot, Math.floor(points[points.length - 1].t / HISTORY_STEP) * HISTORY_STEP);
+    const dataSpan = Math.min(max - points[0].t + HISTORY_STEP, HISTORY_MAX_SLOTS * HISTORY_STEP);
+    const span = Math.max(dataSpan, HISTORY_MIN_SPAN);
+    const fit = Math.max(Math.floor(width / HISTORY_LABEL_PX), 3);   // jumlah label yang muat tanpa rapat
+    let step = HISTORY_TICK_STEPS[HISTORY_TICK_STEPS.length - 1];
+    for (let i = 0; i < HISTORY_TICK_STEPS.length; i++) {
+        if (span / HISTORY_TICK_STEPS[i] <= fit) { step = HISTORY_TICK_STEPS[i]; break; }
+    }
+    return { min: max - span, max: max, step: step };
+}
+
+// Penanda X pada jam genap waktu lokal (00:00, 04:00, 08:00, ...), jadi label ikut bergeser bersama waktu
+function buildHistoryTicks(scale) {
+    const step = historyTickStep;
+    const tzOff = -new Date(scale.max * 1000).getTimezoneOffset() * 60;
+    const ticks = [];
+    for (let t = Math.ceil((scale.min + tzOff) / step) * step - tzOff; t <= scale.max; t += step) {
+        ticks.push({ value: t });
+    }
+    scale.ticks = ticks;
+}
+
+// Tanpa garis bantu vertikal (hanya tanda kecil di sumbu); pergantian hari diberi garis tipis
+function historyGridColor(ctx) {
+    if (!ctx.tick) return 'rgba(0,0,0,0)';
+    return new Date(ctx.tick.value * 1000).getHours() === 0 ? 'rgba(100,116,139,0.35)' : 'rgba(0,0,0,0)';
+}
+
+// Garis vertikal mengikuti titik yang sedang disorot, supaya jelas waktu mana yang sedang dibaca
+const historyCrosshairPlugin = {
+    id: 'historyCrosshair',
+    afterDatasetsDraw(chart) {
+        const active = chart.tooltip && chart.tooltip.getActiveElements ? chart.tooltip.getActiveElements() : [];
+        if (!active.length) return;
+        const x = active[0].element.x;
+        const area = chart.chartArea;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x, area.top);
+        ctx.lineTo(x, area.bottom);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(100,116,139,0.55)';
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.restore();
+    }
+};
+
+// Gradasi dari warna pekat di garis ke transparan di dasar, supaya terlihat "fill" halus
+function makeAreaGradient(context, rgb) {
+    const chart = context.chart;
+    const area = chart.chartArea;
+    if (!area) return 'rgba(' + rgb + ', 0.25)';
+    const g = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    g.addColorStop(0, 'rgba(' + rgb + ', 0.55)');
+    g.addColorStop(1, 'rgba(' + rgb + ', 0.04)');
+    return g;
+}
+
+async function loadStatusHistory() {
+    if (historyFetchInProgress) return;
+    historyFetchInProgress = true;
+    try {
+        const result = await fetchAPI('/api/get-status-history.php?range=' + historyRange, { timeout: 25000 });
+        if (result && result.success) {
+            updateHistoryChart(result.points || []);
+        }
+    } catch (e) {
+        console.debug('[DASHBOARD] history error', e);
+    } finally {
+        historyFetchInProgress = false;
+    }
+}
+
+// Hover tanpa menghitung koordinat kursor sama sekali.
+// Style body memakai "zoom: 80%" sehingga koordinat kursor (clientX/offsetX) meleset di browser dan Chart.js
+// (kursor di kanan, data yang tampil di kiri). Jadi di atas grafik dipasang zona transparan, satu per titik data,
+// dan browser sendiri yang menentukan zona mana yang sedang di bawah kursor (hit-test DOM selalu benar).
+function historyZoneSignature(chart) {
+    const a = chart.chartArea, x = chart.scales.x;
+    return [a.left, a.right, a.top, a.bottom, historyPoints.length,
+            historyPoints.length ? historyPoints[historyPoints.length - 1].t : 0, x.min, x.max].join('|');
+}
+
+function rebuildHistoryHoverZones(chart) {
+    const wrap = document.getElementById('historyChartWrap');
+    if (!wrap || !chart.chartArea) return;
+    let box = document.getElementById('historyHover');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'historyHover';
+        box.style.cssText = 'position:absolute; inset:0; z-index:2;';
+        wrap.appendChild(box);
+        box.addEventListener('mouseover', ev => {
+            const i = ev.target && ev.target.dataset ? ev.target.dataset.i : undefined;
+            if (i === undefined) { setHistoryHover(chart, -1); } else { setHistoryHover(chart, parseInt(i, 10)); }
+        });
+        box.addEventListener('mouseleave', () => setHistoryHover(chart, -1));
+    }
+    const sig = historyZoneSignature(chart);
+    if (box.dataset.sig === sig) return;      // tidak berubah, jangan bangun ulang (supaya hover tidak berkedip)
+    box.dataset.sig = sig;
+    box.innerHTML = '';
+
+    const pts = historyPoints;
+    if (pts.length < 2) return;
+    const area = chart.chartArea;
+    const xs = chart.scales.x;
+    const px = pts.map(p => xs.getPixelForValue(p.t));
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < pts.length; i++) {
+        let l = i === 0 ? px[0] - (px[1] - px[0]) / 2 : (px[i - 1] + px[i]) / 2;
+        let r = i === pts.length - 1 ? px[i] + (px[i] - px[i - 1]) / 2 : (px[i] + px[i + 1]) / 2;
+        l = Math.max(l, area.left);
+        r = Math.min(r, area.right);
+        if (r <= l) continue;
+        const d = document.createElement('div');
+        d.dataset.i = i;
+        d.style.cssText = 'position:absolute; top:' + area.top + 'px; height:' + (area.bottom - area.top) +
+                          'px; left:' + l + 'px; width:' + (r - l) + 'px;';
+        frag.appendChild(d);
+    }
+    box.appendChild(frag);
+}
+
+let historyHoverIndex = -1;
+function setHistoryHover(chart, i) {
+    if (i === historyHoverIndex) return;
+    historyHoverIndex = i;
+    if (i < 0) {
+        chart.setActiveElements([]);
+        chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+    } else {
+        const els = chart.data.datasets.map((d, di) => ({ datasetIndex: di, index: i }));
+        const el = chart.getDatasetMeta(0).data[i];
+        chart.setActiveElements(els);
+        chart.tooltip.setActiveElements(els, { x: el ? el.x : 0, y: el ? el.y : 0 });
+    }
+    chart.update('none');
+}
+
+const historyHoverZonesPlugin = {
+    id: 'historyHoverZones',
+    afterUpdate(chart) { rebuildHistoryHoverZones(chart); }
+};
+
+function applyHistoryWindow(chart) {
+    if (!historyPoints.length) return;
+    const w = historyWindow(historyPoints, chart.width || chart.canvas.parentNode.clientWidth);
+    historyTickStep = w.step;
+    chart.options.scales.x.min = w.min;
+    chart.options.scales.x.max = w.max;
+}
+
+function updateHistoryChart(points) {
+    const canvas = document.getElementById('historyChart');
+    const empty = document.getElementById('historyEmpty');
+    const wrap = document.getElementById('historyChartWrap');
+    if (!canvas || !wrap) return;
+
+    if (!points || points.length < 2) {
+        if (historyChart) { historyChart.destroy(); historyChart = null; }
+        historyPoints = [];
+        historyHoverIndex = -1;
+        const hz = document.getElementById('historyHover');
+        if (hz) { hz.innerHTML = ''; hz.dataset.sig = ''; }
+        canvas.style.display = 'none';
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    canvas.style.display = 'block';
+    if (empty) empty.style.display = 'none';
+
+    historyPoints = points;
+    const online = points.map(p => ({ x: p.t, y: p.online }));
+    const offline = points.map(p => ({ x: p.t, y: p.offline }));
+
+    if (historyChart) {
+        historyChart.data.datasets[0].data = online;
+        historyChart.data.datasets[1].data = offline;
+        applyHistoryWindow(historyChart);
+        historyChart.update('none');
         return;
     }
 
-    uplinkFetchInProgress = true;
-    try {
-        const result = await fetchAPI('/api/uplink-stats.php', { timeout: 25000 });
+    const win = historyWindow(points, wrap.clientWidth);
+    historyTickStep = win.step;
 
-        if (result && result.success) {
-            updateUplinkChart(result.data);
-        } else {
-            if (result && result.error !== 'timeout') {
-                showToast('Gagal memuat data uplink', 'danger');
-            }
-        }
-    } catch (error) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('Error loading uplink:', error);
-        }
-    } finally {
-        uplinkFetchInProgress = false;
-    }
-}
-
-function updateUplinkChart(data) {
-    const ctx = document.getElementById('uplinkChart').getContext('2d');
-
-    if (uplinkChart) {
-        uplinkChart.destroy();
-    }
-
-    uplinkChart = new Chart(ctx, {
-        type: 'doughnut',
+    historyChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
         data: {
-            labels: ['Good', 'Fair', 'Poor', 'No Signal'],
-            datasets: [{
-                data: [ data.good, data.fair, data.poor, data.no_signal],
-                backgroundColor: [
-                    // 'rgba(28, 200, 138, 0.8)',  // Excellent - green
-                    'rgba(52, 152, 219, 0.8)',  // Good - blue
-                    'rgba(241, 196, 15, 0.8)',  // Fair - yellow
-                    'rgba(231, 76, 60, 0.8)',   // Poor - red
-                    'rgba(149, 165, 166, 0.8)'  // No signal - gray
-                ],
-                borderColor: [
-                    // 'rgba(28, 200, 138, 1)',
-                    'rgba(52, 152, 219, 1)',
-                    'rgba(241, 196, 15, 1)',
-                    'rgba(231, 76, 60, 1)',
-                    'rgba(149, 165, 166, 1)'
-                ],
-                borderWidth: 2
-            }]
+            datasets: [
+                {
+                    label: 'Online',
+                    data: online,
+                    borderColor: 'rgb(28, 180, 120)',
+                    backgroundColor: 'rgba(76, 175, 80, 0.22)',
+                    fill: true,
+                    tension: 0.4,           // garis halus
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                },
+                {
+                    label: 'Offline',
+                    data: offline,
+                    borderColor: 'rgb(231, 74, 59)',
+                    backgroundColor: 'rgba(231, 74, 59, 0.18)',
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                }
+            ]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
+            parsing: false,
+            normalized: true,
+            events: [],   // hover diurus lewat zona DOM (historyHoverZonesPlugin) karena body memakai CSS zoom 80%
+            layout: { padding: { right: 8 } },
+            // Layar berubah ukuran: hitung ulang jendela supaya label tetap tidak rapat
+            onResize(chart) { applyHistoryWindow(chart); },
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            scales: {
+                x: {
+                    type: 'linear',
+                    min: win.min,
+                    max: win.max,
+                    afterBuildTicks: buildHistoryTicks,
+                    grid: { color: historyGridColor, drawTicks: true, tickColor: '#94a3b8', tickLength: 6 },
+                    ticks: { autoSkip: false, maxRotation: 0, minRotation: 0, font: { size: 11 }, callback: historyTickLabel }
+                },
+                y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: 'rgba(148,163,184,0.2)' } }
+            },
             plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        boxWidth: 10,
-                        padding: 5,
-                        font: {
-                            size: 9
+                legend: { display: false },
+                tooltip: {
+                    position: 'nearest',     // kotak tooltip di dekat kursor, bukan di tengah antar dua garis
+                    caretPadding: 10,
+                    callbacks: {
+                        title(items) { return historyTickLabel(items[0].parsed.x); },
+                        footer(items) {
+                            const ds = items[0].chart.data.datasets;
+                            const i = items[0].dataIndex;
+                            return 'Total: ' + (ds[0].data[i].y + ds[1].data[i].y);
                         }
                     }
-                },
-                title: {
-                    display: true,
-                    text: 'PON Signal Distribution'
                 }
             }
-        }
-    });
-}
-
-function updateManufacturerChart(manufacturers) {
-    const ctx = document.getElementById('manufacturerChart').getContext('2d');
-    if (manufacturerChart) manufacturerChart.destroy();
-    if (Object.keys(manufacturers).length === 0) return;
-
-    // Perbanyak warna agar tidak kehabisan saat ada merek baru
-    const bgColors = ['rgba(54, 162, 235, 0.8)', 'rgba(255, 99, 132, 0.8)', 'rgba(255, 206, 86, 0.8)', 'rgba(75, 192, 192, 0.8)', 'rgba(153, 102, 255, 0.8)', 'rgba(255, 159, 64, 0.8)', 'rgba(199, 199, 199, 0.8)'];
-    const borderColors = ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)', 'rgba(199, 199, 199, 1)'];
-
-    manufacturerChart = new Chart(ctx, {
-        type: 'doughnut', // Disamakan agar bolong di tengah
-        data: {
-            labels: Object.keys(manufacturers),
-            datasets: [{
-                data: Object.values(manufacturers),
-                backgroundColor: bgColors.slice(0, Object.keys(manufacturers).length),
-                borderColor: borderColors.slice(0, Object.keys(manufacturers).length),
-                borderWidth: 2
-            }]
         },
-        options: { 
-            responsive: true, 
-            maintainAspectRatio: true,
-            plugins: { 
-                legend: { 
-                    position: 'bottom',
-                    labels: { boxWidth: 10, padding: 5, font: { size: 9 } } // Disamakan dengan ukuran kotak grafik Uplink
-                } 
-            } 
-        }
-    });
-}
-
-function updatePonTypeChart(ponTypes) {
-    const ctx = document.getElementById('ponTypeChart').getContext('2d');
-    if (ponTypeChart) ponTypeChart.destroy();
-    if (Object.keys(ponTypes).length === 0) return;
-
-    ponTypeChart = new Chart(ctx, {
-        type: 'doughnut', // Diubah dari pie menjadi doughnut
-        data: {
-            labels: Object.keys(ponTypes),
-            datasets: [{
-                data: Object.values(ponTypes),
-                backgroundColor: ['rgba(153, 102, 255, 0.8)', 'rgba(255, 159, 64, 0.8)', 'rgba(201, 203, 207, 0.8)', 'rgba(54, 162, 235, 0.8)'],
-                borderColor: ['rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)', 'rgba(201, 203, 207, 1)', 'rgba(54, 162, 235, 1)'],
-                borderWidth: 2
-            }]
-        },
-        options: { 
-            responsive: true, 
-            maintainAspectRatio: true,
-            plugins: { 
-                legend: { 
-                    position: 'bottom',
-                    labels: { boxWidth: 10, padding: 5, font: { size: 9 } } // Disamakan dengan ukuran kotak grafik Uplink
-                } 
-            } 
-        }
+        plugins: [historyCrosshairPlugin, historyHoverZonesPlugin]
     });
 }
 
@@ -639,13 +684,26 @@ async function confirmSummon() {
 document.addEventListener('DOMContentLoaded', function() {
     <?php if ($genieacsConfigured): ?>
         loadDashboardData();
-        loadUplinkData();
-        
-        // Auto refresh every 30 seconds
+        // Riwayat dimuat sedikit terlambat supaya snapshot terbaru dari loadDashboardData() ikut terbaca
+        setTimeout(loadStatusHistory, 4000);
+        loadStatusHistory();
+
+        // Auto refresh dashboard tiap 5 menit (kartu angka + grafik)
         setInterval(() => {
             loadDashboardData();
-            loadUplinkData();
-        }, 30000);
+            setTimeout(loadStatusHistory, 4000);
+        }, 300000);
+
+        // Geser grafik tepat saat slot 30 menit berganti (tanpa menunggu refresh 5 menit)
+        let lastHistorySlot = Math.floor(Date.now() / 1000 / HISTORY_STEP);
+        setInterval(() => {
+            const slot = Math.floor(Date.now() / 1000 / HISTORY_STEP);
+            if (slot !== lastHistorySlot && historyChart) {
+                lastHistorySlot = slot;
+                applyHistoryWindow(historyChart);
+                historyChart.update('none');
+            }
+        }, 20000);
     <?php endif; ?>
 });
 </script>
