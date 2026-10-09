@@ -93,6 +93,7 @@ async function loadDevices(isAutoRefresh = false) {
     allDevices = [];
     let skip = 0;
     const chunkSize = 1000;
+    const parallelChunks = 3;   // chunk sisanya diminta bersamaan, bukan satu-satu
     let hasMore = true;
 
     try {
@@ -116,15 +117,23 @@ async function loadDevices(isAutoRefresh = false) {
             tbody.innerHTML = '<tr><td colspan="12" class="text-center"><div class="spinner"></div><div style="margin-top: 10px;">Loading devices... (' + allDevices.length + ' loaded)</div></td></tr>';
         }
 
-        // Load remaining chunks
+        // Load remaining chunks: diminta paralel per gelombang (urutan hasil tetap terjaga)
         while (hasMore) {
-            const chunk = await fetchAPI(`/api/get-devices.php?limit=${chunkSize}&skip=${skip}`);
+            const skips = [];
+            for (let i = 0; i < parallelChunks; i++) skips.push(skip + i * chunkSize);
 
-            if (!chunk || !chunk.success) break;
+            const results = await Promise.all(
+                skips.map(s => fetchAPI(`/api/get-devices.php?limit=${chunkSize}&skip=${s}`))
+            );
 
-            allDevices = allDevices.concat(chunk.devices || []);
-            hasMore = chunk.hasMore;
-            skip += chunkSize;
+            let failed = false;
+            for (const chunk of results) {
+                if (!chunk || !chunk.success) { failed = true; break; }
+                allDevices = allDevices.concat(chunk.devices || []);
+                if (!chunk.hasMore) { hasMore = false; break; }   // chunk terakhir (tidak penuh)
+            }
+            if (failed) break;
+            skip += parallelChunks * chunkSize;
 
             // Update loading indicator
             if (!isAutoRefresh) {
