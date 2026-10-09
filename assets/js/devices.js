@@ -10,6 +10,28 @@ let bulkBusy = false;            // true selama bulk action jalan (auto-refresh 
 let currentRxFilter = 'all';     // Filter redaman aktif: all | bagus | warning | kritis
 let currentBrandFilter = 'all';  // Filter merek aktif: all | huawei | zte | fiberhome | lainnya
 
+// ---------------------------------------------------------------------------
+// JENIS PERANGKAT: ONU vs MikroTik (RouterBoard) -- keduanya ada di daftar GenieACS yang sama
+// ---------------------------------------------------------------------------
+// MikroTik dikenali dari manufacturer ("MikroTik") atau dari awalan product class
+// (RB4011iGS+, CCR2004, CRS326, hAP ax2, hEX, cAP, wAP, SXT, LHG, ...).
+function isMikrotik(device) {
+    const manufacturer = (device.manufacturer || '').toLowerCase();
+    if (manufacturer.includes('mikrotik') || manufacturer.includes('routerboard')) return true;
+    return /^(RB\d|RBM|CCR\d|CRS\d|hAP|hEX|cAP|wAP|mAP|SXT|LHG|NetMetal|PowerBox)/i.test((device.product_class || '').trim());
+}
+
+// Tab yang isinya device GenieACS (bukan item peta)
+function isDeviceTab(type) {
+    return type === 'onu' || type === 'mikrotik';
+}
+
+// Device milik tab yang sedang aktif (ONU atau MikroTik)
+function getScopeDevices(type) {
+    const scope = type || currentFilterType;
+    return scope === 'mikrotik' ? allDevices.filter(isMikrotik) : allDevices.filter(d => !isMikrotik(d));
+}
+
 // Kelompok redaman (threshold sama dengan warna badge Rx di tabel):
 //  bagus   : -15.00 s/d -24.99 dBm (hijau)
 //  warning : -13.00 s/d -14.99 dan -25.00 s/d -28.00 dBm (kuning)
@@ -45,7 +67,7 @@ function updateBrandOptions(rbFilteredDevices) {
     if (!select) return;
 
     const counts = {};
-    allDevices.forEach(d => { counts[getBrandKey(d)] = 0; });
+    getScopeDevices().forEach(d => { counts[getBrandKey(d)] = 0; });
     rbFilteredDevices.forEach(d => { counts[getBrandKey(d)]++; });
 
     const keys = Object.keys(counts).sort((a, b) => {
@@ -170,7 +192,7 @@ async function loadDevices(isAutoRefresh = false) {
 
         // ...baru render dengan filter RB/status/search/sort, supaya badge terakhir
         // ditulis oleh hasil filter
-        if (currentFilterType === 'onu') {
+        if (isDeviceTab(currentFilterType)) {
             applyRbFilter(true);
         } else {
             renderMapItems(currentFilterType);
@@ -216,11 +238,11 @@ async function renderDevices(devices) {
     tbody.innerHTML = '';
 
     // Determine appropriate colspan based on current filter type
-    const colspan = (currentFilterType === 'onu') ? 12 : 6;
+    const colspan = currentFilterType === 'mikrotik' ? 9 : (currentFilterType === 'onu' ? 12 : 6);
 
     if (devices.length === 0) {
         // If showing infrastructure items, show map items instead
-        if (currentFilterType !== 'onu') {
+        if (!isDeviceTab(currentFilterType)) {
             renderMapItems(currentFilterType);
             return;
         }
@@ -383,6 +405,30 @@ async function renderDevices(devices) {
 
         // Check tags column visibility state for consistent display
         const tagsColumnDisplay = tagsColumnVisible ? '' : 'none';
+
+        if (currentFilterType === 'mikrotik') {
+            // MikroTik: tanpa kolom SSID, PPPoE, Rx, Temp (tidak relevan untuk router)
+            row.innerHTML = `
+                <td>
+                    <input type="checkbox" class="device-checkbox" value="${encodeURIComponent(device.device_id)}" onchange="updateBulkActionButtons()">
+                </td>
+                <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>
+                <td>${device.mac_address}</td>
+                <td data-sort-value="${device.product_class || ''}">${device.product_class || 'N/A'}</td>
+                <td data-sort-value="${ipAddress}">${ipDisplay}</td>
+                <td data-sort-value="${clientsCount}" class="text-center">${clientsBadge}</td>
+                <td data-sort-value="${device.status}">${statusDisplay}</td>
+                <td class="tags-column" data-sort-value="${tagsSortValue}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
+                <td>
+                    ${mapButton}
+                    <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
+                        <i class="bi bi-lightning-charge"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+            return;
+        }
 
         row.innerHTML = `
             <td>
@@ -556,9 +602,21 @@ function filterByRx(value) {
 
 // Update badge ONU di tab (mengikuti filter RB yang sedang dipilih)
 function updateDeviceTypeCountsFromMap(devices, mapCounts) {
+    refreshTypeBadges();
+}
+
+// Badge tab: ONU mengikuti filter RB, MikroTik jumlah total router.
+// renderedCount (opsional) = jumlah hasil akhir (setelah semua filter) untuk tab yang sedang aktif.
+function refreshTypeBadges(renderedCount) {
     const onuBadge = document.getElementById('count-onu');
+    const mikrotikBadge = document.getElementById('count-mikrotik');
     if (onuBadge) {
-        onuBadge.textContent = getRbFilteredDevices().length;
+        onuBadge.textContent = (currentFilterType === 'onu' && renderedCount !== undefined)
+            ? renderedCount : getRbFilteredDevices('onu').length;
+    }
+    if (mikrotikBadge) {
+        mikrotikBadge.textContent = (currentFilterType === 'mikrotik' && renderedCount !== undefined)
+            ? renderedCount : getRbFilteredDevices('mikrotik').length;
     }
 }
 
@@ -566,7 +624,35 @@ function updateDeviceTypeCountsFromMap(devices, mapCounts) {
 function generateTableHeader(type) {
     const tableHeader = document.getElementById('table-header');
 
-    if (type === 'onu') {
+    if (type === 'mikrotik') {
+        const tagsDisplayMk = tagsColumnVisible ? '' : 'none';
+        // MikroTik (RouterBoard): kolom ringkas
+        tableHeader.innerHTML = `
+            <tr>
+                <th style="width: 40px;">
+                    <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()" title="Select All">
+                </th>
+                <th>SN</th>
+                <th>MAC</th>
+                <th class="sortable" onclick="sortTable('product_class')" style="cursor: pointer;">
+                    Model <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('ip')" style="cursor: pointer;">
+                    IP <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('connected_clients')" style="cursor: pointer;">
+                    Client <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="sortable" onclick="sortTable('status')" style="cursor: pointer;">
+                    Status <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th class="tags-column sortable" onclick="sortTable('tags')" style="cursor: pointer; display: ${tagsDisplayMk};">
+                    Tags <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
+                <th>Action</th>
+            </tr>
+        `;
+    } else if (type === 'onu') {
         // Check current tags column visibility state
         const tagsDisplay = tagsColumnVisible ? '' : 'none';
 
@@ -627,6 +713,13 @@ function generateTableHeader(type) {
 function filterByType(type) {
     currentFilterType = type;
 
+    // Filter merek & redaman khusus ONU: reset saat pindah tab supaya tab lain tidak kosong tanpa sebab
+    currentBrandFilter = 'all';
+    currentRxFilter = 'all';
+    const rxSelectEl = document.getElementById('rxFilter');
+    if (rxSelectEl) rxSelectEl.value = 'all';
+    currentPage = 1;
+
     // Generate appropriate table header
     generateTableHeader(type);
 
@@ -641,8 +734,8 @@ function filterByType(type) {
     currentSortDirection = 'asc';
     resetSortIcons();
 
-    if (type === 'onu') {
-        // ONU: lewat master filter supaya filter RB/status tetap kepakai
+    if (isDeviceTab(type)) {
+        // ONU / MikroTik: lewat master filter supaya filter RB/status tetap kepakai
         applyRbFilter();
     } else {
         // For ODP, ODC, OLT, Server: show map items
@@ -661,7 +754,7 @@ function extractIP(ipString) {
 // Update search placeholder based on current tab
 function updateSearchPlaceholder(type) {
     const searchInput = document.getElementById('search-input');
-    if (type === 'onu') {
+    if (isDeviceTab(type)) {
         searchInput.placeholder = 'Search by Serial Number, MAC Address, or Tags...';
     } else {
         searchInput.placeholder = 'Search by Name...';
@@ -891,7 +984,7 @@ function goToPage(page) {
 
     currentPage = page;
 
-    if (currentFilterType === 'onu') {
+    if (isDeviceTab(currentFilterType)) {
         applyRbFilter(true);
     } else {
         filterByType(currentFilterType);
@@ -908,7 +1001,7 @@ function changeItemsPerPage() {
     // Reset to page 1 when changing items per page
     currentPage = 1;
 
-    if (currentFilterType === 'onu') {
+    if (isDeviceTab(currentFilterType)) {
         applyRbFilter(true);
     } else {
         filterByType(currentFilterType);
@@ -1221,10 +1314,15 @@ window.addEventListener('beforeunload', function() {
 // ---------------------------------------------------------------------------
 // MASTER FILTER (RB + Status + Search + Sort + Pagination)
 // ---------------------------------------------------------------------------
-function getRbFilteredDevices() {
+function getRbFilteredDevices(type) {
+    const scopeType = type || currentFilterType;
+    const scopeDevices = getScopeDevices(scopeType);
+    // Router MikroTik tidak ikut filter RB (IP-nya di luar segmen RB ONU)
+    if (scopeType === 'mikrotik') return scopeDevices;
+
     const rbElement = document.getElementById('rbFilter');
     const rbFilter = rbElement ? rbElement.value.toLowerCase() : 'all';
-    if (rbFilter === 'all') return allDevices;
+    if (rbFilter === 'all') return scopeDevices;
 
     const prefixMap = { 
         '56c': '10.123.', 
@@ -1238,7 +1336,7 @@ function getRbFilteredDevices() {
     const prefix = prefixMap[rbFilter];
     if (!prefix) return [];
 
-    return allDevices.filter(d => extractIP(d.ip_tr069).startsWith(prefix));
+    return scopeDevices.filter(d => extractIP(d.ip_tr069).startsWith(prefix));
 }
 
 function applyRbFilter(keepPage = false) {
@@ -1295,10 +1393,9 @@ function applyRbFilter(keepPage = false) {
 
     // 6. Render
     renderDevices(devicesToRender);
-    updateDeviceCount(devicesToRender.length, allDevices.length);
+    updateDeviceCount(devicesToRender.length, getScopeDevices().length);
 
-    const onuBadge = document.getElementById('count-onu');
-    if (onuBadge) onuBadge.textContent = devicesToRender.length;
+    refreshTypeBadges(devicesToRender.length);
 }
 
 // ---------------------------------------------------------------------------
