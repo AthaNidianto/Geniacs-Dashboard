@@ -420,7 +420,6 @@ async function renderDevices(devices) {
                 <td data-sort-value="${device.status}">${statusDisplay}</td>
                 <td class="tags-column" data-sort-value="${tagsSortValue}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
                 <td>
-                    ${mapButton}
                     <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
                         <i class="bi bi-lightning-charge"></i>
                     </button>
@@ -446,7 +445,6 @@ async function renderDevices(devices) {
             <td data-sort-value="${device.status}">${statusDisplay}</td>
             <td class="tags-column" data-sort-value="${tagsSortValue}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
             <td>
-                ${mapButton}
                 <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
                     <i class="bi bi-lightning-charge"></i>
                 </button>
