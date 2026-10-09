@@ -362,26 +362,26 @@ async function renderDevices(devices) {
         }
 
         // Map button - conditional based on registration status
-        let mapButton;
-        if (isInMap) {
-            // Green button - opens map in new tab
-            let mapUrl;
-            if (mapInfo.itemType === 'mikrotik') {
-                // For MikroTik devices, focus on server
-                mapUrl = `/map.php?focus_type=server&focus_id=${mapInfo.itemId}`;
-            } else {
-                // For ONU devices, focus on ONU
-                mapUrl = `/map.php?focus_type=onu&focus_serial=${encodeURIComponent(device.serial_number)}`;
-            }
-            mapButton = `<button class="btn btn-sm btn-success me-1" onclick="window.open('${mapUrl}', '_blank')" title="View on Map">
-                <i class="bi bi-map"></i>
-            </button>`;
-        } else {
-            // Gray button - shows alert
-            mapButton = `<button class="btn btn-sm btn-secondary me-1" onclick="showNotInMapAlert('${encodeURIComponent(device.serial_number)}')" title="Not Registered in Map">
-                <i class="bi bi-map"></i>
-            </button>`;
-        }
+        // let mapButton;
+        // if (isInMap) {
+        //     // Green button - opens map in new tab
+        //     let mapUrl;
+        //     if (mapInfo.itemType === 'mikrotik') {
+        //         // For MikroTik devices, focus on server
+        //         mapUrl = `/map.php?focus_type=server&focus_id=${mapInfo.itemId}`;
+        //     } else {
+        //         // For ONU devices, focus on ONU
+        //         mapUrl = `/map.php?focus_type=onu&focus_serial=${encodeURIComponent(device.serial_number)}`;
+        //     }
+        //     mapButton = `<button class="btn btn-sm btn-success me-1" onclick="window.open('${mapUrl}', '_blank')" title="View on Map">
+        //         <i class="bi bi-map"></i>
+        //     </button>`;
+        // } else {
+        //     // Gray button - shows alert
+        //     mapButton = `<button class="btn btn-sm btn-secondary me-1" onclick="showNotInMapAlert('${encodeURIComponent(device.serial_number)}')" title="Not Registered in Map">
+        //         <i class="bi bi-map"></i>
+        //     </button>`;
+        // }
 
         // Status badge with ping
         let statusDisplay;
