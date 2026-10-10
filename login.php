@@ -62,8 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="login-container">
         <div class="login-card">
             <div class="login-header">
-                <img src="/assets/img/logo-eratel.svg" alt="GACS Logo"
-                    style="display:block; width:100%; max-width:320px; margin: -60px auto -80px;">
+                <!-- logo beranimasi: ikon wifi muncul di tengah, geser ke kiri sambil wordmark "eratel" terbuka dari kiri -->
+                <img src="/assets/img/eratel-anim.svg?v=1" alt="Eratel"
+                    style="display:block; width:100%; max-width:300px; margin: 0 auto;">
             </div>
 
             <?php if ($error): ?>
