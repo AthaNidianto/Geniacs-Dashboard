@@ -28,7 +28,7 @@
     <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">
-            <img src="/assets/img/eratel.svg" alt="Eratel">
+            <img src="/assets/img/eratel-color.svg" alt="Eratel">
         </div>
         <h3 style="font-size: 1rem; line-height: 1.3;"><?php echo APP_NAME; ?></h3>
     </div>
