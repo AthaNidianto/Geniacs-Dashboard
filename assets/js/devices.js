@@ -448,6 +448,9 @@ async function renderDevices(devices) {
                 <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
                     <i class="bi bi-lightning-charge"></i>
                 </button>
+                <button class="btn btn-sm btn-danger" onclick="rebootDeviceQuick('${device.device_id}')" title="Reboot ONU">
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>
             </td>
         `;
         tbody.appendChild(row);
@@ -924,6 +927,76 @@ async function confirmSummon() {
     }
 
     currentSummonDeviceId = null;
+}
+
+// ---------------------------------------------------------------------------
+// REBOOT ONU (per device)
+//   ONU harus membalas dulu. Kalau offline / tidak membalas, reboot dibatalkan (tidak ditunda).
+// ---------------------------------------------------------------------------
+let currentRebootDeviceId = null;
+
+function ensureRebootModal() {
+    if (document.getElementById('rebootModal')) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+<div class="modal fade" id="rebootModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat"></i> Reboot ONU</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <i class="bi bi-exclamation-triangle" style="font-size: 3rem; color: var(--danger-color);"></i>
+        <h5 class="mt-3">Reboot ONU ini?</h5>
+        <p class="mb-1"><strong id="reboot-sn"></strong> <span class="text-muted" id="reboot-ip"></span></p>
+        <p class="text-muted mb-0">ONU akan restart sekitar 1-3 menit dan internet pelanggan ikut putus selama itu.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Batal</button>
+        <button type="button" class="btn btn-danger" id="reboot-confirm-btn" onclick="confirmReboot()"><i class="bi bi-arrow-repeat"></i> Ya, Reboot</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(wrap.firstElementChild);
+}
+
+function rebootDeviceQuick(deviceId) {
+    ensureRebootModal();
+    currentRebootDeviceId = deviceId;
+    const d = (typeof allDevices !== 'undefined' ? allDevices : []).find(x => x.device_id === deviceId);
+    document.getElementById('reboot-sn').textContent = d ? (d.serial_number || deviceId) : deviceId;
+    document.getElementById('reboot-ip').textContent = d && (d.ip_tr069 || d.ip_address) ? '(' + (d.ip_tr069 || d.ip_address) + ')' : '';
+    const btn = document.getElementById('reboot-confirm-btn');
+    btn.disabled = false;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('rebootModal')).show();
+}
+
+async function confirmReboot() {
+    if (!currentRebootDeviceId) return;
+    const deviceId = currentRebootDeviceId;
+    const btn = document.getElementById('reboot-confirm-btn');
+    btn.disabled = true;               // cegah klik ganda
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Menunggu balasan ONU...';
+
+    const result = await fetchAPI('/api/reboot-device.php', {
+        method: 'POST',
+        timeout: 30000,
+        body: JSON.stringify({ device_id: deviceId })
+    });
+
+    btn.innerHTML = original;
+    const m = bootstrap.Modal.getInstance(document.getElementById('rebootModal'));
+    if (m) m.hide();
+
+    if (result && result.success) {
+        showToast(result.message || 'Perintah reboot diterima ONU', 'success', 5000);
+    } else {
+        showToast((result && result.message) || 'Gagal reboot ONU', 'danger', 5000);
+    }
+    currentRebootDeviceId = null;
 }
 
 // ---------------------------------------------------------------------------

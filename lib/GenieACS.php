@@ -352,6 +352,35 @@ class GenieACS
     }
 
     /**
+     * Reboot ONU dan pastikan ONU benar-benar menerima perintahnya.
+     *
+     * HTTP 200 = ONU menjawab (RebootResponse) dan akan restart.
+     * HTTP 202 = ONU tidak membalas / offline. Task reboot DIHAPUS dari antrean, supaya ONU tidak
+     *            tiba-tiba restart sendiri nanti saat kembali online.
+     */
+    public function rebootDeviceVerified($deviceId, $timeoutMs = 8000)
+    {
+        $timeoutMs = max(1000, min(30000, (int)$timeoutMs));
+        $endpoint = '/devices/' . rawurlencode($deviceId) . "/tasks?timeout={$timeoutMs}&connection_request";
+
+        $result = $this->request($endpoint, 'POST', ['name' => 'reboot']);
+
+        if (!$result['success']) {
+            return $result;
+        }
+
+        if (($result['http_code'] ?? 0) !== 200) {
+            $taskId = $result['data']['_id'] ?? null;
+            if ($taskId) {
+                $this->request('/tasks/' . rawurlencode($taskId), 'DELETE');
+            }
+            return ['success' => false, 'no_response' => true, 'http_code' => $result['http_code'] ?? 202];
+        }
+
+        return $result;
+    }
+
+    /**
      * Set parameter values on device
      *
      * @param string $deviceId Device ID
