@@ -69,7 +69,7 @@ include __DIR__ . '/views/layouts/header.php';
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="lan-tab" data-bs-toggle="tab" data-bs-target="#lan" type="button" role="tab">
-                        <i class="bi bi-diagram-3"></i> Status Ether UNI<span id="lan-count-badge" class="badge bg-primary ms-1">0</span>
+                        <i class="bi bi-diagram-3"></i> Ether UNI<span id="lan-count-badge" class="badge bg-primary ms-1">0</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">

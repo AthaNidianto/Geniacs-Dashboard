@@ -420,6 +420,13 @@ table td {
     color: var(--secondary-color);
 }
 
+/* "table th { text-align: left }" di atas mengalahkan kelas Bootstrap text-center pada <table>;
+   aturan ini membuat header dan isi ikut rata tengah kalau tabelnya diberi text-center. */
+table.text-center th,
+table.text-center td {
+    text-align: center;
+}
+
 table tbody tr:hover {
     background: var(--gray-100);
 }
