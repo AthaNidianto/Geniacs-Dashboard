@@ -38,7 +38,7 @@ $genieacs = new GenieACS(
 );
 
 // Tunggu balasan ONU maksimal 8 detik. Kalau ONU tidak membalas, reboot dibatalkan (bukan ditunda).
-$res = $genieacs->rebootDevice($deviceId, 8000);
+$res = $genieacs->rebootDeviceVerified($deviceId, 8000);
 
 if (!empty($res['success'])) {
     jsonResponse(['success' => true, 'message' => 'Perintah reboot diterima ONU. ONU akan restart (sekitar 1-3 menit).']);

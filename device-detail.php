@@ -33,6 +33,9 @@ include __DIR__ . '/views/layouts/header.php';
         <button class="btn btn-primary" onclick="summonDevice()">
             <i class="bi bi-lightning-charge"></i> Summon Device
         </button>
+        <button class="btn btn-danger" onclick="rebootDevice()">
+            <i class="bi bi-arrow-repeat"></i> Reboot
+        </button>
         <button class="btn btn-success" onclick="showAddTagModal()">
             <i class="bi bi-tag"></i> Add Tag
         </button>

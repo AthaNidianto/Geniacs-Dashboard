@@ -1356,6 +1356,42 @@ function summonDevice() {
     modal.show();
 }
 
+// ---------------------------------------------------------------------------
+// REBOOT ONU
+// ONU harus membalas dulu. Kalau offline / tidak membalas, reboot dibatalkan (tidak ditunda).
+// ---------------------------------------------------------------------------
+function rebootDevice() {
+    document.getElementById('reboot-device-id').textContent = deviceId;
+    const btn = document.getElementById('reboot-confirm-btn');
+    if (btn) btn.disabled = false;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('rebootModal')).show();
+}
+
+async function confirmReboot() {
+    const btn = document.getElementById('reboot-confirm-btn');
+    const original = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;   // cegah klik ganda
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Menunggu balasan ONU...';
+    }
+
+    const result = await fetchAPI('/api/reboot-device.php', {
+        method: 'POST',
+        timeout: 30000,
+        body: JSON.stringify({ device_id: deviceId })
+    });
+
+    if (btn) btn.innerHTML = original;
+    const modal = bootstrap.Modal.getInstance(document.getElementById('rebootModal'));
+    if (modal) modal.hide();
+
+    if (result && result.success) {
+        showToast(result.message || 'Perintah reboot diterima ONU', 'success', 5000);
+    } else {
+        showToast((result && result.message) || 'Gagal reboot ONU', 'danger', 5000);
+    }
+}
+
 // Summon device specifically to get admin credentials
 // Uses GenieACS task to fetch VirtualParameters (superAdmin, superPassword)
 async function summonForAdminCredentials() {

@@ -26,6 +26,34 @@
     </div>
 </div>
 
+<!-- Reboot Confirmation Modal -->
+<div class="modal fade" id="rebootModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-arrow-repeat"></i> Konfirmasi Reboot ONU
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <i class="bi bi-exclamation-triangle" style="font-size: 3rem; color: var(--danger-color);"></i>
+                <h5 class="mt-3">Reboot ONU ini?</h5>
+                <p class="text-muted mb-1">ONU akan restart sekitar 1-3 menit dan internet pelanggan ikut putus selama itu.</p>
+                <p class="text-muted mb-0"><small>Device ID: <strong id="reboot-device-id"></strong></small></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-lg"></i> Batal
+                </button>
+                <button type="button" class="btn btn-danger" id="reboot-confirm-btn" onclick="confirmReboot()">
+                    <i class="bi bi-arrow-repeat"></i> Ya, Reboot
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Edit WiFi Configuration Modal -->
 <div class="modal fade" id="editWiFiModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
