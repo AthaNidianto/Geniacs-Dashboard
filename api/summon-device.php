@@ -37,11 +37,21 @@ $genieacs = new GenieACS(
     $credentials['password']
 );
 
-// Use the new method that summons device AND fetches admin credentials
-$result = $genieacs->summonAndFetchAdminCredentials($deviceId);
+// Batas waktu tunggu balasan ONU (ms); default 5 detik
+$timeoutMs = isset($data['timeout_ms']) ? (int)$data['timeout_ms'] : 5000;
+$timeoutMs = max(1000, min(30000, $timeoutMs));
+
+// Summon + ambil admin credentials. Berhasil hanya kalau ONU benar-benar membalas.
+$result = $genieacs->summonAndFetchAdminCredentials($deviceId, $timeoutMs);
 
 if ($result['success']) {
-    jsonResponse(['success' => true, 'message' => 'Device summon berhasil dan admin credentials sedang diambil...']);
+    jsonResponse(['success' => true, 'message' => 'ONU membalas. Admin credentials sedang diambil...']);
+} elseif (!empty($result['no_response'])) {
+    jsonResponse([
+        'success' => false,
+        'no_response' => true,
+        'message' => 'ONU tidak membalas dalam ' . round($timeoutMs / 1000) . ' detik (dinyatakan gagal)'
+    ]);
 } else {
     $errorMsg = 'Gagal summon device';
     if (isset($result['error'])) {

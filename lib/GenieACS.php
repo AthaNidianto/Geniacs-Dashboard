@@ -289,36 +289,55 @@ class GenieACS
      * Task 1 menunggu hasil (timeout=3000) seperti sebelumnya. Task berikutnya disesuaikan
      * dengan model data modem (TR-098 / TR-181).
      */
-    public function summonAndFetchAdminCredentials($deviceId)
+    public function summonAndFetchAdminCredentials($deviceId, $timeoutMs = 5000)
     {
+        $timeoutMs = max(1000, min(30000, (int)$timeoutMs));
         $encodedId = rawurlencode($deviceId);
-        $endpoint = "/devices/{$encodedId}/tasks?timeout=3000&connection_request";
+        $endpoint = "/devices/{$encodedId}/tasks?timeout={$timeoutMs}&connection_request";
 
-        // Task 1: Summon + VirtualParameters (admin password)
+        // Task 1: Summon + VirtualParameters (admin password).
+        // Dengan ?timeout, GenieACS menunggu sampai ONU benar-benar mengerjakan task:
+        //   HTTP 200 = ONU membalas (task selesai), HTTP 202 = hanya masuk antrean, ONU tidak membalas.
         $result = $this->request($endpoint, 'POST', [
             'name' => 'refreshObject',
             'objectName' => 'VirtualParameters'
         ]);
 
-        if ($result['success']) {
-            $root = $this->detectRoot($deviceId);
+        if (!$result['success']) {
+            return $result;
+        }
 
-            $objects = [];
-            if ($root !== 'tr181') {
-                $objects[] = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'; // SSID
-                $objects[] = 'InternetGatewayDevice.LANDevice.1.Hosts';             // Client TR-098
+        if (($result['http_code'] ?? 0) !== 200) {
+            // ONU tidak membalas dalam batas waktu -> dinyatakan gagal, task dihapus supaya antrean tidak menumpuk
+            $taskId = $result['data']['_id'] ?? null;
+            if ($taskId) {
+                $this->request('/tasks/' . rawurlencode($taskId), 'DELETE');
             }
-            if ($root !== 'tr098') {
-                $objects[] = 'Device.WiFi';   // SSID
-                $objects[] = 'Device.Hosts';  // Client TR-181
-            }
+            return [
+                'success' => false,
+                'no_response' => true,
+                'http_code' => $result['http_code'] ?? 202,
+                'timeout_ms' => $timeoutMs,
+            ];
+        }
 
-            foreach ($objects as $objectName) {
-                $this->request($endpoint, 'POST', [
-                    'name' => 'refreshObject',
-                    'objectName' => $objectName
-                ]);
-            }
+        $root = $this->detectRoot($deviceId);
+
+        $objects = [];
+        if ($root !== 'tr181') {
+            $objects[] = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'; // SSID
+            $objects[] = 'InternetGatewayDevice.LANDevice.1.Hosts';             // Client TR-098
+        }
+        if ($root !== 'tr098') {
+            $objects[] = 'Device.WiFi';   // SSID
+            $objects[] = 'Device.Hosts';  // Client TR-181
+        }
+
+        foreach ($objects as $objectName) {
+            $this->request($endpoint, 'POST', [
+                'name' => 'refreshObject',
+                'objectName' => $objectName
+            ]);
         }
 
         return $result;
@@ -1433,6 +1452,199 @@ class GenieACS
             'tasks_ok'      => $tasksOk,
             'tasks_failed'  => $tasksTotal - $tasksOk,
         ];
+    }
+
+    /**
+     * Summon massal DENGAN verifikasi balasan ONU.
+     *
+     * Berhasil  = ONU membalas dalam $timeoutMs (GenieACS menjawab HTTP 200 untuk task + connection_request).
+     * Gagal     = tidak ada balasan dalam batas waktu (HTTP 202 / error). Task yang menggantung dihapus
+     *             dari antrean supaya tidak menumpuk kalau di-summon berulang.
+     * Untuk ONU yang membalas, task pengisian data (SSID + client terhubung) dikirim setelahnya.
+     *
+     * @return array total, success_count, fail_count, fault_count, timeout_ms, failed[] ([id, reason])
+     */
+    public function bulkSummonVerify(array $deviceIds, int $timeoutMs = 5000, int $concurrency = 40)
+    {
+        $timeoutMs = max(1000, min(30000, $timeoutMs));
+        $deviceIds = array_values(array_unique(array_filter($deviceIds, 'strlen')));
+        $total = count($deviceIds);
+
+        $out = [
+            'success' => true,
+            'total' => $total,
+            'success_count' => 0,
+            'fail_count' => 0,
+            'fault_count' => 0,
+            'timeout_ms' => $timeoutMs,
+            'failed' => [],
+        ];
+        if ($total === 0) return $out;
+
+        // Fase A: kirim task + connection_request, tunggu balasan ONU maksimal $timeoutMs
+        $jobs = [];
+        foreach ($deviceIds as $id) {
+            $jobs[$id] = [
+                'method' => 'POST',
+                'path' => '/devices/' . rawurlencode($id) . "/tasks?timeout={$timeoutMs}&connection_request",
+                'body' => ['name' => 'refreshObject', 'objectName' => 'VirtualParameters'],
+            ];
+        }
+        $res = $this->multiRequest($jobs, $concurrency, (int)ceil($timeoutMs / 1000) + 20);
+
+        $responded = [];
+        $staleTasks = [];
+        foreach ($deviceIds as $id) {
+            $r = $res[$id] ?? ['code' => 0, 'body' => null, 'err' => 'tidak ada hasil'];
+            if ($r['err'] === null && $r['code'] === 200) {
+                $responded[] = $id;
+                if (is_array($r['body']) && !empty($r['body']['fault'])) {
+                    $out['fault_count']++;   // ONU membalas, tapi mengembalikan fault
+                }
+            } elseif ($r['err'] === null && $r['code'] === 202) {
+                $out['failed'][] = ['id' => $id, 'reason' => 'no_response'];
+                if (is_array($r['body']) && !empty($r['body']['_id'])) {
+                    $staleTasks[] = $r['body']['_id'];
+                }
+            } else {
+                $detail = $r['err'] !== null ? $r['err'] : ('HTTP ' . $r['code']);
+                $out['failed'][] = ['id' => $id, 'reason' => 'error', 'detail' => $detail];
+            }
+        }
+
+        $out['success_count'] = count($responded);
+        $out['fail_count'] = count($out['failed']);
+
+        // Bersihkan task yang menggantung (ONU tidak membalas)
+        if ($staleTasks) {
+            $delJobs = [];
+            foreach ($staleTasks as $i => $taskId) {
+                $delJobs[$i] = ['method' => 'DELETE', 'path' => '/tasks/' . rawurlencode($taskId), 'body' => null];
+            }
+            $this->multiRequest($delJobs, $concurrency, 20);
+        }
+
+        // Fase B (hanya ONU yang membalas): isi data SSID + client terhubung
+        if ($responded) {
+            $roots = [];
+            $projection = urlencode('InternetGatewayDevice.DeviceInfo.ProductClass,Device.DeviceInfo.ProductClass');
+            foreach (array_chunk($responded, 60) as $chunk) {
+                $q = urlencode(json_encode(['_id' => ['$in' => $chunk]]));
+                $r = $this->request("/devices/?query={$q}&projection={$projection}");
+                if ($r['success'] && is_array($r['data'])) {
+                    foreach ($r['data'] as $d) {
+                        if (!isset($d['_id'])) continue;
+                        if (isset($d['InternetGatewayDevice'])) $roots[$d['_id']] = 'tr098';
+                        elseif (isset($d['Device'])) $roots[$d['_id']] = 'tr181';
+                    }
+                }
+            }
+
+            $queueJobs = [];
+            $wakeJobs = [];
+            foreach ($responded as $id) {
+                $root = $roots[$id] ?? null;
+                if ($root === 'tr098') {
+                    $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'];
+                    $wakeJobs[]  = [$id, 'InternetGatewayDevice.LANDevice.1.Hosts'];
+                } elseif ($root === 'tr181') {
+                    $queueJobs[] = [$id, 'Device.WiFi'];
+                    $wakeJobs[]  = [$id, 'Device.Hosts'];
+                } else {
+                    $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration'];
+                    $queueJobs[] = [$id, 'Device.WiFi'];
+                    $queueJobs[] = [$id, 'InternetGatewayDevice.LANDevice.1.Hosts'];
+                    $wakeJobs[]  = [$id, 'Device.Hosts'];
+                }
+            }
+            $ignored = [];   // kegagalan fase B tidak mengubah status "ONU membalas"
+            $this->postMulti($queueJobs, false, $concurrency, $ignored);
+            $this->postMulti($wakeJobs, true, $concurrency, $ignored);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Request paralel generik (curl_multi) yang mengembalikan kode HTTP + body tiap job.
+     *
+     * @param array $jobs        key => ['method' => 'POST|DELETE|GET', 'path' => '/...', 'body' => array|null]
+     * @param int   $concurrency Jumlah koneksi paralel
+     * @param int   $timeoutSec  Batas waktu per request (detik)
+     * @return array key => ['code' => int, 'body' => array|null, 'err' => string|null]
+     */
+    private function multiRequest(array $jobs, int $concurrency, int $timeoutSec = 30)
+    {
+        $results = [];
+        if (!$jobs) return $results;
+
+        $keys = array_keys($jobs);
+        $total = count($keys);
+        $next = 0;
+        $inFlight = 0;
+        $meta = [];
+        $mh = curl_multi_init();
+
+        $add = function () use (&$next, &$inFlight, &$meta, $keys, $total, $jobs, $mh, $timeoutSec) {
+            if ($next >= $total) return false;
+            $key = $keys[$next++];
+            $job = $jobs[$key];
+
+            $ch = curl_init($this->baseUrl . $job['path']);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_TIMEOUT, $timeoutSec);
+            if ($job['method'] === 'POST') {
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($job['body']));
+                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            } elseif ($job['method'] !== 'GET') {
+                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $job['method']);
+            }
+            if ($this->username && $this->password) {
+                curl_setopt($ch, CURLOPT_USERPWD, "{$this->username}:{$this->password}");
+            }
+
+            curl_multi_add_handle($mh, $ch);
+            $meta[spl_object_id($ch)] = $key;
+            $inFlight++;
+            return true;
+        };
+
+        for ($i = 0; $i < $concurrency; $i++) {
+            if (!$add()) break;
+        }
+
+        do {
+            curl_multi_exec($mh, $running);
+
+            while ($info = curl_multi_info_read($mh)) {
+                $ch = $info['handle'];
+                $key = $meta[spl_object_id($ch)] ?? null;
+                if ($key !== null) {
+                    $results[$key] = [
+                        'code' => (int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
+                        'body' => json_decode((string)curl_multi_getcontent($ch), true),
+                        'err'  => $info['result'] === CURLE_OK ? null : curl_error($ch),
+                    ];
+                }
+                unset($meta[spl_object_id($ch)]);
+                curl_multi_remove_handle($mh, $ch);
+                curl_close($ch);
+                $inFlight--;
+
+                $add();
+            }
+
+            if ($inFlight > 0) {
+                if (curl_multi_select($mh, 0.5) === -1) {
+                    usleep(1000);
+                }
+            }
+        } while ($inFlight > 0);
+
+        curl_multi_close($mh);
+        return $results;
     }
 
     /**

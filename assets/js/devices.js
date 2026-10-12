@@ -1496,69 +1496,243 @@ async function syncRbTags() {
 }
 
 // ---------------------------------------------------------------------------
-// BULK SUMMON (Smart Queuing di backend + chunking 5 device di frontend)
+// BULK SUMMON dengan verifikasi balasan ONU
+//   Berhasil = ONU membalas dalam batas waktu yang dipilih.
+//   Gagal    = tidak ada balasan dalam batas waktu (atau error). Hasil ditampilkan: berapa berhasil, berapa gagal.
 // ---------------------------------------------------------------------------
-async function summonSelectedDevices() {
+let svState = null; // state proses summon yang sedang jalan / terakhir selesai
+
+function svEsc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function svDeviceInfo(deviceId) {
+    const d = (typeof allDevices !== 'undefined' ? allDevices : []).find(x => x.device_id === deviceId);
+    return {
+        sn: d ? (d.serial_number || deviceId) : deviceId,
+        ip: d ? (d.ip_tr069 || d.ip_address || '') : ''
+    };
+}
+
+function ensureSummonVerifyModal() {
+    if (document.getElementById('summonVerifyModal')) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+<div class="modal fade" id="summonVerifyModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-lightning-charge"></i> Summon Massal</h5>
+        <button type="button" class="btn-close" id="sv-close-x" onclick="svClose()"></button>
+      </div>
+      <div class="modal-body">
+        <!-- 1) konfirmasi -->
+        <div id="sv-confirm">
+          <p class="mb-2">Summon <strong id="sv-count"></strong> device. ONU yang <strong>membalas</strong> dinyatakan berhasil, yang <strong>tidak membalas</strong> dalam batas waktu dinyatakan gagal.</p>
+          <label for="sv-timeout" class="form-label mb-1">Batas waktu balasan ONU</label>
+          <select id="sv-timeout" class="form-select form-select-sm" style="max-width:260px">
+            <option value="3000">3 detik (cepat)</option>
+            <option value="5000" selected>5 detik (disarankan)</option>
+            <option value="10000">10 detik</option>
+            <option value="15000">15 detik (ONU lambat)</option>
+          </select>
+          <div class="form-text">Makin besar batas waktu, makin lama prosesnya kalau banyak ONU yang mati.</div>
+        </div>
+        <!-- 2) progres -->
+        <div id="sv-progress" style="display:none">
+          <div class="d-flex justify-content-between mb-1"><span id="sv-progress-text">Memproses...</span><span id="sv-progress-pct">0%</span></div>
+          <div class="progress mb-3"><div class="progress-bar" id="sv-bar" style="width:0%"></div></div>
+          <div class="d-flex gap-3">
+            <span class="badge bg-success">Berhasil: <span id="sv-live-ok">0</span></span>
+            <span class="badge bg-danger">Gagal: <span id="sv-live-fail">0</span></span>
+            <span class="badge bg-secondary">Sisa: <span id="sv-live-left">0</span></span>
+          </div>
+        </div>
+        <!-- 3) hasil -->
+        <div id="sv-result" style="display:none">
+          <div class="row text-center g-2 mb-3">
+            <div class="col-4"><div class="border rounded p-2"><div class="text-muted small">Total</div><div class="fs-4 fw-bold" id="sv-res-total">0</div></div></div>
+            <div class="col-4"><div class="border rounded p-2"><div class="text-success small">Berhasil (ONU membalas)</div><div class="fs-4 fw-bold text-success" id="sv-res-ok">0</div></div></div>
+            <div class="col-4"><div class="border rounded p-2"><div class="text-danger small">Gagal (tidak membalas)</div><div class="fs-4 fw-bold text-danger" id="sv-res-fail">0</div></div></div>
+          </div>
+          <div id="sv-res-note" class="small text-muted mb-2"></div>
+          <div id="sv-failed-wrap" style="display:none">
+            <div class="fw-semibold mb-1">Daftar ONU gagal</div>
+            <div style="max-height:260px; overflow:auto" class="border rounded">
+              <table class="table table-sm table-striped mb-0">
+                <thead><tr><th>SN</th><th>IP</th><th>Keterangan</th></tr></thead>
+                <tbody id="sv-failed-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="sv-btn-cancel" onclick="svClose()">Batal</button>
+        <button type="button" class="btn btn-primary" id="sv-btn-start" onclick="svStart()"><i class="bi bi-lightning-charge"></i> Mulai Summon</button>
+        <button type="button" class="btn btn-outline-secondary" id="sv-btn-copy" style="display:none" onclick="svCopyFailed()"><i class="bi bi-clipboard"></i> Salin SN gagal</button>
+        <button type="button" class="btn btn-warning" id="sv-btn-retry" style="display:none" onclick="svRetryFailed()"><i class="bi bi-arrow-repeat"></i> Coba lagi yang gagal</button>
+        <button type="button" class="btn btn-secondary" id="sv-btn-done" style="display:none" onclick="svClose()">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(wrap.firstElementChild);
+}
+
+function svShow(stage) {
+    document.getElementById('sv-confirm').style.display = stage === 'confirm' ? '' : 'none';
+    document.getElementById('sv-progress').style.display = stage === 'progress' ? '' : 'none';
+    document.getElementById('sv-result').style.display = stage === 'result' ? '' : 'none';
+    document.getElementById('sv-btn-start').style.display = stage === 'confirm' ? '' : 'none';
+    document.getElementById('sv-btn-cancel').style.display = stage === 'result' ? 'none' : '';
+    document.getElementById('sv-btn-cancel').textContent = stage === 'progress' ? 'Hentikan' : 'Batal';
+    document.getElementById('sv-btn-done').style.display = stage === 'result' ? '' : 'none';
+    document.getElementById('sv-close-x').style.display = stage === 'progress' ? 'none' : '';
+}
+
+function summonSelectedDevices() {
     const deviceIds = getSelectedDeviceIds().filter(id => id && id.trim() !== '');
 
     if (deviceIds.length === 0) {
         showToast('Pilih setidaknya satu device di tabel untuk disummon!', 'warning');
         return;
     }
+    openSummonVerify(deviceIds);
+}
 
-    if (!confirm(`Yakin ingin melakukan Summon massal pada ${deviceIds.length} device?`)) {
+function openSummonVerify(deviceIds) {
+    ensureSummonVerifyModal();
+    svState = { ids: deviceIds, running: false, stop: false };
+    document.getElementById('sv-count').textContent = deviceIds.length;
+    svShow('confirm');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('summonVerifyModal')).show();
+}
+
+function svClose() {
+    if (svState && svState.running) {      // tombol "Hentikan" saat proses jalan
+        svState.stop = true;
+        document.getElementById('sv-btn-cancel').disabled = true;
+        document.getElementById('sv-btn-cancel').textContent = 'Menghentikan...';
         return;
     }
+    const m = bootstrap.Modal.getInstance(document.getElementById('summonVerifyModal'));
+    if (m) m.hide();
+}
 
+async function svStart() {
+    if (!svState || svState.running) return;
+    const timeoutMs = parseInt(document.getElementById('sv-timeout').value, 10) || 5000;
+    const ids = svState.ids;
+
+    // Satu request menangani N device dengan 40 koneksi paralel; hitung N supaya 1 request tidak lebih dari ~45 detik.
+    const waves = Math.max(1, Math.floor(45000 / timeoutMs));
+    const batchSize = Math.min(300, 40 * waves);
+
+    svState.running = true;
+    svState.stop = false;
     bulkBusy = true; // pause auto-refresh selama proses
-    const btn = document.getElementById('btn-bulk-summon');
-    const btnOriginal = btn ? btn.innerHTML : '';
-    showLoading();
+    let ok = 0, fail = 0, done = 0, faults = 0;
+    const failed = [];
 
-    // Pengiriman task dilakukan PARALEL di server (curl_multi), jadi browser cukup kirim
-    // beberapa request besar. 300 device/request aman dari timeout; turunkan kalau muncul "Request timeout".
-    const batchSize = 300;
-    let successTotal = 0;
-    let failTotal = 0;
-    let doneCount = 0;
+    svShow('progress');
+    const btnCancel = document.getElementById('sv-btn-cancel');
+    btnCancel.disabled = false;
+    const upd = () => {
+        const pct = Math.round(done / ids.length * 100);
+        document.getElementById('sv-bar').style.width = pct + '%';
+        document.getElementById('sv-progress-pct').textContent = pct + '%';
+        document.getElementById('sv-progress-text').textContent = `Memproses ${done}/${ids.length} (menunggu balasan ONU maks. ${Math.round(timeoutMs / 1000)} detik)`;
+        document.getElementById('sv-live-ok').textContent = ok;
+        document.getElementById('sv-live-fail').textContent = fail;
+        document.getElementById('sv-live-left').textContent = ids.length - done;
+    };
+    upd();
+
     const t0 = performance.now();
-
     try {
-        for (let i = 0; i < deviceIds.length; i += batchSize) {
-            const batch = deviceIds.slice(i, i + batchSize);
+        for (let i = 0; i < ids.length; i += batchSize) {
+            if (svState.stop) break;
+            const batch = ids.slice(i, i + batchSize);
 
             const result = await fetchAPI('/api/summon-all.php', {
                 method: 'POST',
-                body: JSON.stringify({ device_ids: batch })
+                timeout: 150000,
+                body: JSON.stringify({ device_ids: batch, timeout_ms: timeoutMs })
             });
 
             if (result && result.success) {
-                successTotal += (result.success_count || 0);
-                failTotal += (result.fail_count || 0);
+                ok += result.success_count || 0;
+                fail += result.fail_count || 0;
+                faults += result.fault_count || 0;
+                (result.failed || []).forEach(f => failed.push(f));
             } else {
-                failTotal += batch.length;
+                // Request satu batch gagal total: semua device di batch ini dihitung gagal
+                const why = (result && result.message) || 'Request ke server gagal / timeout';
+                batch.forEach(id => failed.push({ id: id, reason: 'error', detail: why }));
+                fail += batch.length;
             }
-
-            doneCount += batch.length;
-            if (btn) btn.textContent = `Summon ${doneCount}/${deviceIds.length}`;
+            done += batch.length;
+            upd();
         }
-
-        const secs = ((performance.now() - t0) / 1000).toFixed(1);
-        showToast(
-            `Perintah summon terkirim ke ${successTotal} device dalam ${secs} detik${failTotal ? `, gagal ${failTotal}` : ''}. Data modem akan terisi bertahap (1-3 menit).`,
-            failTotal ? 'warning' : 'success'
-        );
-    } catch (error) {
-        console.error('Error saat summon massal:', error);
+    } catch (e) {
+        console.error('Error saat summon massal:', e);
         showToast('Terjadi kesalahan sistem di tengah proses summon.', 'danger');
-    } finally {
-        hideLoading();
-        if (btn) btn.innerHTML = btnOriginal;
-        resetSelection();
-        bulkBusy = false;
-        // Modem butuh waktu menjawab; refresh data setelah jeda
-        setTimeout(() => loadDevices(true), 30000);
     }
+
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    svState.running = false;
+    svState.failed = failed;
+    bulkBusy = false;
+    svRenderResult({ total: ids.length, ok, fail, faults, notProcessed: ids.length - done, secs, timeoutMs });
+    resetSelection();
+
+    // Modem butuh waktu mengisi data (SSID, client); refresh tabel setelah jeda
+    if (ok > 0) setTimeout(() => loadDevices(true), 30000);
+}
+
+function svRenderResult(r) {
+    svShow('result');
+    document.getElementById('sv-res-total').textContent = r.total;
+    document.getElementById('sv-res-ok').textContent = r.ok;
+    document.getElementById('sv-res-fail').textContent = r.fail;
+
+    const notes = [`Selesai dalam ${r.secs} detik (batas waktu balasan ${Math.round(r.timeoutMs / 1000)} detik).`];
+    if (r.faults) notes.push(`${r.faults} ONU membalas tetapi mengembalikan fault (tetap dihitung berhasil).`);
+    if (r.notProcessed > 0) notes.push(`Dihentikan: ${r.notProcessed} device belum diproses.`);
+    if (r.ok > 0) notes.push('Data modem (SSID, client) terisi bertahap 1-3 menit.');
+    document.getElementById('sv-res-note').textContent = notes.join(' ');
+
+    const failed = svState.failed || [];
+    const wrap = document.getElementById('sv-failed-wrap');
+    const body = document.getElementById('sv-failed-body');
+    body.innerHTML = failed.map(f => {
+        const d = svDeviceInfo(f.id);
+        const why = f.reason === 'no_response' ? 'Tidak ada balasan dari ONU' : 'Error: ' + (f.detail || 'tidak diketahui');
+        return `<tr><td><a href="/device-detail.php?id=${encodeURIComponent(f.id)}" target="_blank">${svEsc(d.sn)}</a></td><td>${svEsc(d.ip)}</td><td>${svEsc(why)}</td></tr>`;
+    }).join('');
+    wrap.style.display = failed.length ? '' : 'none';
+    document.getElementById('sv-btn-copy').style.display = failed.length ? '' : 'none';
+    document.getElementById('sv-btn-retry').style.display = failed.length ? '' : 'none';
+}
+
+function svCopyFailed() {
+    const text = (svState.failed || []).map(f => svDeviceInfo(f.id).sn).join('\n');
+    const done = () => showToast(`${svState.failed.length} SN gagal disalin`, 'success');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, () => showToast('Gagal menyalin', 'danger'));
+    } else {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { showToast('Gagal menyalin', 'danger'); }
+        ta.remove();
+    }
+}
+
+function svRetryFailed() {
+    const ids = (svState.failed || []).map(f => f.id);
+    if (!ids.length) return;
+    openSummonVerify(ids);   // kembali ke layar konfirmasi, batas waktu bisa dinaikkan
 }
 
 // ---------------------------------------------------------------------------

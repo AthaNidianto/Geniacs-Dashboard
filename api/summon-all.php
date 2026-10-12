@@ -5,8 +5,8 @@ header('Content-Type: application/json');
 requireLogin();
 
 // Satu proses PHP mengirim ratusan task paralel; beri waktu cukup
-set_time_limit(120);
-ini_set('max_execution_time', 120);
+set_time_limit(180);
+ini_set('max_execution_time', 180);
 
 if (!isGenieACSConfigured()) {
     jsonResponse(['success' => false, 'message' => 'GenieACS belum dikonfigurasi']);
@@ -35,9 +35,13 @@ if (count($deviceIds) === 0) {
 }
 
 // Batas pengaman per request
-if (count($deviceIds) > 1000) {
-    jsonResponse(['success' => false, 'message' => 'Maksimal 1000 device per request']);
+if (count($deviceIds) > 400) {
+    jsonResponse(['success' => false, 'message' => 'Maksimal 400 device per request']);
 }
+
+// Batas waktu tunggu balasan ONU (ms). ONU yang tidak membalas dalam waktu ini dinyatakan gagal.
+$timeoutMs = isset($input['timeout_ms']) ? (int)$input['timeout_ms'] : 5000;
+$timeoutMs = max(1000, min(30000, $timeoutMs));
 
 $genieacs = new GenieACS(
     $credentials['host'],
@@ -48,7 +52,8 @@ $genieacs = new GenieACS(
 
 try {
     // Concurrency 40 = jumlah koneksi paralel ke NBI GenieACS. Turunkan kalau NBI mulai error/timeout.
-    $result = $genieacs->bulkSummonParallel($deviceIds, 40);
+    // Berhasil = ONU membalas dalam $timeoutMs; selain itu gagal (lihat result['failed']).
+    $result = $genieacs->bulkSummonVerify($deviceIds, $timeoutMs, 40);
     jsonResponse($result);
 } catch (Exception $e) {
     jsonResponse([
