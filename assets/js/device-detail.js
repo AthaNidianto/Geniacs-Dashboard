@@ -2558,7 +2558,7 @@ function renderLanPortsTab(ports) {
 
     return `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="mb-0"><i class="bi bi-ethernet"></i> Ethernet LAN Ports
+            <h6 class="mb-0"><i class="bi bi-ethernet"></i> Ether UNI
                 <small class="text-muted ms-2">${total} total &bull; ${active} active &bull; ${total - active} inactive</small>
             </h6>
             <button id="lan-refresh-btn" class="btn btn-sm btn-primary" onclick="refreshLanPorts()" title="Ambil status terbaru dari ONU">
@@ -2566,7 +2566,7 @@ function renderLanPortsTab(ports) {
             </button>
         </div>
         <div class="table-responsive">
-            <table class="table table-sm table-bordered align-middle">
+            <table class="table table-sm table-bordered align-middle text-center">
                 <thead class="table-light">
                     <tr>
                         <th>Port</th><th>Status</th><th>Speed</th><th>Duplex</th>
