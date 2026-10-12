@@ -1632,7 +1632,7 @@ async function svStart() {
     svState.running = true;
     svState.stop = false;
     bulkBusy = true; // pause auto-refresh selama proses
-    let ok = 0, fail = 0, done = 0, faults = 0;
+    let ok = 0, fail = 0, done = 0, faults = 0, tVerify = 0, tFill = 0;
     const failed = [];
 
     svShow('progress');
@@ -1665,6 +1665,8 @@ async function svStart() {
                 ok += result.success_count || 0;
                 fail += result.fail_count || 0;
                 faults += result.fault_count || 0;
+                tVerify += (result.timing && result.timing.verify_s) || 0;
+                tFill += (result.timing && result.timing.fill_s) || 0;
                 (result.failed || []).forEach(f => failed.push(f));
             } else {
                 // Request satu batch gagal total: semua device di batch ini dihitung gagal
@@ -1684,7 +1686,7 @@ async function svStart() {
     svState.running = false;
     svState.failed = failed;
     bulkBusy = false;
-    svRenderResult({ total: ids.length, ok, fail, faults, notProcessed: ids.length - done, secs, timeoutMs });
+    svRenderResult({ total: ids.length, ok, fail, faults, notProcessed: ids.length - done, secs, timeoutMs, tVerify, tFill });
     resetSelection();
 
     // Modem butuh waktu mengisi data (SSID, client); refresh tabel setelah jeda
@@ -1700,6 +1702,7 @@ function svRenderResult(r) {
     const notes = [`Selesai dalam ${r.secs} detik (batas waktu balasan ${Math.round(r.timeoutMs / 1000)} detik).`];
     if (r.faults) notes.push(`${r.faults} ONU membalas tetapi mengembalikan fault (tetap dihitung berhasil).`);
     if (r.notProcessed > 0) notes.push(`Dihentikan: ${r.notProcessed} device belum diproses.`);
+    if (r.tVerify) notes.push(`Rincian: tunggu balasan ONU ${r.tVerify.toFixed(1)} dtk, kirim task pengisian data ${r.tFill.toFixed(1)} dtk.`);
     if (r.ok > 0) notes.push('Data modem (SSID, client) terisi bertahap 1-3 menit.');
     document.getElementById('sv-res-note').textContent = notes.join(' ');
 

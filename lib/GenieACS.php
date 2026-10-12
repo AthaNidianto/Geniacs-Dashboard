@@ -1478,6 +1478,7 @@ class GenieACS
             'fault_count' => 0,
             'timeout_ms' => $timeoutMs,
             'failed' => [],
+            'timing' => [],
         ];
         if ($total === 0) return $out;
 
@@ -1490,7 +1491,9 @@ class GenieACS
                 'body' => ['name' => 'refreshObject', 'objectName' => 'VirtualParameters'],
             ];
         }
+        $tA = microtime(true);
         $res = $this->multiRequest($jobs, $concurrency, (int)ceil($timeoutMs / 1000) + 20);
+        $out['timing']['verify_s'] = round(microtime(true) - $tA, 1);
 
         $responded = [];
         $staleTasks = [];
@@ -1557,9 +1560,14 @@ class GenieACS
                     $wakeJobs[]  = [$id, 'Device.Hosts'];
                 }
             }
-            $ignored = [];   // kegagalan fase B tidak mengubah status "ONU membalas"
+            // Kegagalan fase B tidak mengubah status "ONU membalas".
+            // Task alarm TIDAK menunggu ONU selesai me-refresh (SSID/Hosts bisa makan puluhan detik):
+            // timeout kecil membuat NBI langsung menjawab, task tetap jalan di sesi ONU berikutnya.
+            $tB = microtime(true);
+            $ignored = [];
             $this->postMulti($queueJobs, false, $concurrency, $ignored);
-            $this->postMulti($wakeJobs, true, $concurrency, $ignored);
+            $this->postMulti($wakeJobs, true, $concurrency, $ignored, 1000);
+            $out['timing']['fill_s'] = round(microtime(true) - $tB, 1);
         }
 
         return $out;
@@ -1654,9 +1662,10 @@ class GenieACS
      * @param bool  $connectionReq  true = tambahkan ?connection_request (task alarm)
      * @param int   $concurrency    Jumlah koneksi paralel
      * @param array $failedDevices  (by reference) diisi deviceId yang ada task gagal
+     * @param int|null $timeoutMs   batas tunggu NBI untuk task alarm (null = default GenieACS, bisa puluhan detik)
      * @return int  Jumlah task yang sukses (HTTP 2xx)
      */
-    private function postMulti(array $jobs, bool $connectionReq, int $concurrency, array &$failedDevices)
+    private function postMulti(array $jobs, bool $connectionReq, int $concurrency, array &$failedDevices, ?int $timeoutMs = null)
     {
         $total = count($jobs);
         if ($total === 0) return 0;
@@ -1667,11 +1676,12 @@ class GenieACS
         $ok = 0;
         $meta = []; // spl_object_id(handle) => deviceId
 
-        $add = function () use (&$next, &$inFlight, &$meta, $total, $jobs, $mh, $connectionReq) {
+        $add = function () use (&$next, &$inFlight, &$meta, $total, $jobs, $mh, $connectionReq, $timeoutMs) {
             if ($next >= $total) return false;
             [$deviceId, $objectName] = $jobs[$next++];
 
-            $path = '/devices/' . rawurlencode($deviceId) . '/tasks' . ($connectionReq ? '?connection_request' : '');
+            $query = $connectionReq ? ($timeoutMs !== null ? "?timeout={$timeoutMs}&connection_request" : '?connection_request') : '';
+            $path = '/devices/' . rawurlencode($deviceId) . '/tasks' . $query;
             $ch = curl_init($this->baseUrl . $path);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_POST, true);

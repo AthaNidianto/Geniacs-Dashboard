@@ -717,3 +717,10 @@ table tbody tr:hover {
         flex: 1 1 100%;
     }
 }
+
+/* body memakai "zoom: 80%": satuan vw/vh pada backdrop Bootstrap ikut menyusut sehingga layar gelapnya
+   cuma menutup ~80% layar. Pakai persen supaya selalu menutup penuh. */
+.modal-backdrop {
+    width: 100% !important;
+    height: 100% !important;
+}
