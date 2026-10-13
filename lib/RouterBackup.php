@@ -207,10 +207,19 @@ class RouterBackup
                 } else {
                     if (empty($t['show_sensitive'])) $export->equal('hide-sensitive', 'yes');
                 }
-                $client->query($export)->read();
+                $err = $this->trapMessage($client->query($export)->read());
+                if ($err) return ['success' => false, 'message' => "Router menolak /export: $err"];
             }
             if (in_array('backup', $want, true)) {
-                $client->query((new Query('/system/backup/save'))->equal('name', $remote))->read();
+                $err = $this->trapMessage($client->query((new Query('/system/backup/save'))->equal('name', $remote))->read());
+                if ($err) return ['success' => false, 'message' => "Router menolak /system backup save: $err"];
+            }
+
+            // pastikan file benar-benar sudah ada di router sebelum diambil lewat FTP
+            foreach ($want as $ext) {
+                if (!$this->waitForFile($client, "$remote.$ext")) {
+                    return ['success' => false, 'message' => "Router tidak membuat file $ext. Biasanya policy user router kurang (butuh: api, ftp, read, test" . (!empty($t['show_sensitive']) ? ', sensitive' : '') . ", dan mungkin write/policy). Coba jalankan manual di terminal router: /export file=tes"];
+                }
             }
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'API router gagal: ' . $e->getMessage()];
@@ -245,6 +254,29 @@ class RouterBackup
             return ['success' => false, 'message' => 'Download FTP gagal (' . implode('; ', $errors) . ')', 'files' => $saved];
         }
         return ['success' => true, 'message' => 'Backup berhasil: ' . implode(', ', $saved), 'files' => $saved];
+    }
+
+    /** Ambil pesan error dari respons API RouterOS (!trap), atau null kalau sukses. */
+    private function trapMessage($response): ?string
+    {
+        if (is_array($response)) {
+            if (isset($response['after']['message'])) return (string)$response['after']['message'];
+            if (isset($response['message']) && is_string($response['message'])) return $response['message'];
+            foreach ($response as $row) {
+                if (is_array($row) && isset($row['message']) && is_string($row['message'])) return $row['message'];
+            }
+        }
+        return null;
+    }
+
+    private function waitForFile(Client $client, string $name): bool
+    {
+        for ($i = 0; $i < 10; $i++) {
+            $found = $client->query((new Query('/file/print'))->where('name', $name))->read();
+            if (!empty($found) && isset($found[0]['name'])) return true;
+            sleep(1);
+        }
+        return false;
     }
 
     private function majorVersion(Client $client): int
