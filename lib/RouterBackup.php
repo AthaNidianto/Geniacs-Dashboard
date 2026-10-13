@@ -1,0 +1,273 @@
+<?php
+namespace App;
+
+use RouterOS\Client;
+use RouterOS\Query;
+
+/**
+ * Backup konfigurasi router MikroTik.
+ *
+ * Alur: API RouterOS membuat file (/export -> .rsc dan/atau /system/backup/save -> .backup),
+ * file diambil lewat FTP (curl), disimpan di server, lalu file di router dihapus.
+ * User router cukup policy: api, ftp, read, test (lihat penjelasan di README deploy).
+ */
+class RouterBackup
+{
+    private $conn;
+
+    public static function backupDir(): string
+    {
+        $dir = defined('ROUTER_BACKUP_DIR') ? ROUTER_BACKUP_DIR : (getenv('ROUTER_BACKUP_DIR') ?: '/var/backups/gacs-routers');
+        return rtrim($dir, '/');
+    }
+
+    public function __construct($conn)
+    {
+        $this->conn = $conn;
+        $this->ensureTable();
+    }
+
+    private function ensureTable(): void
+    {
+        $this->conn->query("CREATE TABLE IF NOT EXISTS `router_backup_targets` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `name` varchar(100) NOT NULL,
+            `host` varchar(255) NOT NULL,
+            `api_port` int(11) NOT NULL DEFAULT 8728,
+            `ftp_port` int(11) NOT NULL DEFAULT 21,
+            `username` varchar(100) NOT NULL,
+            `password` varchar(255) NOT NULL,
+            `format` enum('rsc','backup','both') NOT NULL DEFAULT 'both',
+            `keep_count` int(11) NOT NULL DEFAULT 14,
+            `show_sensitive` tinyint(1) NOT NULL DEFAULT 0,
+            `last_backup_at` datetime NULL DEFAULT NULL,
+            `last_status` varchar(10) NULL DEFAULT NULL,
+            `last_message` varchar(255) NULL DEFAULT NULL,
+            `created_at` timestamp NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // tabel lama (kalau sudah terlanjur dibuat sebelum kolom ini ada)
+        $c = $this->conn->query("SHOW COLUMNS FROM router_backup_targets LIKE 'show_sensitive'");
+        if ($c && $c->num_rows === 0) {
+            $this->conn->query("ALTER TABLE router_backup_targets ADD `show_sensitive` tinyint(1) NOT NULL DEFAULT 0 AFTER `keep_count`");
+        }
+    }
+
+    public static function slug(string $name): string
+    {
+        $s = strtolower(preg_replace('/[^A-Za-z0-9_-]+/', '-', $name));
+        $s = trim($s, '-');
+        return $s !== '' ? $s : 'router';
+    }
+
+    public function listTargets(): array
+    {
+        $rows = [];
+        $res = $this->conn->query("SELECT id,name,host,api_port,ftp_port,username,format,keep_count,show_sensitive,last_backup_at,last_status,last_message FROM router_backup_targets ORDER BY name");
+        while ($res && ($r = $res->fetch_assoc())) $rows[] = $r;
+        return $rows;
+    }
+
+    public function getTarget(int $id): ?array
+    {
+        $stmt = $this->conn->prepare("SELECT * FROM router_backup_targets WHERE id = ?");
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $r = $stmt->get_result()->fetch_assoc();
+        return $r ?: null;
+    }
+
+    public function saveTarget(array $d): array
+    {
+        $id = (int)($d['id'] ?? 0);
+        $name = trim($d['name'] ?? '');
+        $host = trim($d['host'] ?? '');
+        $user = trim($d['username'] ?? '');
+        $pass = (string)($d['password'] ?? '');
+        $apiPort = (int)($d['api_port'] ?? 8728) ?: 8728;
+        $ftpPort = (int)($d['ftp_port'] ?? 21) ?: 21;
+        $format = in_array($d['format'] ?? 'both', ['rsc', 'backup', 'both'], true) ? $d['format'] : 'both';
+        $keep = max(1, min(100, (int)($d['keep_count'] ?? 14)));
+        $sens = !empty($d['show_sensitive']) ? 1 : 0;
+
+        if ($name === '' || $host === '' || $user === '') {
+            return ['success' => false, 'message' => 'Nama, host, dan username wajib diisi'];
+        }
+        if (!preg_match('/^[A-Za-z0-9.\-]+$/', $host)) {
+            return ['success' => false, 'message' => 'Host tidak valid'];
+        }
+
+        if ($id > 0) {
+            $old = $this->getTarget($id);
+            if (!$old) return ['success' => false, 'message' => 'Router tidak ditemukan'];
+            if ($pass === '') $pass = $old['password'];   // kosong = password tidak diubah
+            $stmt = $this->conn->prepare("UPDATE router_backup_targets SET name=?,host=?,api_port=?,ftp_port=?,username=?,password=?,format=?,keep_count=?,show_sensitive=? WHERE id=?");
+            $stmt->bind_param('ssiisssiii', $name, $host, $apiPort, $ftpPort, $user, $pass, $format, $keep, $sens, $id);
+        } else {
+            if ($pass === '') return ['success' => false, 'message' => 'Password wajib diisi'];
+            $stmt = $this->conn->prepare("INSERT INTO router_backup_targets (name,host,api_port,ftp_port,username,password,format,keep_count,show_sensitive) VALUES (?,?,?,?,?,?,?,?,?)");
+            $stmt->bind_param('ssiisssii', $name, $host, $apiPort, $ftpPort, $user, $pass, $format, $keep, $sens);
+        }
+        if (!$stmt->execute()) return ['success' => false, 'message' => 'Gagal menyimpan'];
+        return ['success' => true, 'message' => 'Router disimpan'];
+    }
+
+    public function deleteTarget(int $id): bool
+    {
+        $stmt = $this->conn->prepare("DELETE FROM router_backup_targets WHERE id = ?");
+        $stmt->bind_param('i', $id);
+        return $stmt->execute();
+    }
+
+    /** Daftar file backup milik satu router (terbaru dulu). */
+    public function listFiles(int $targetId): array
+    {
+        $t = $this->getTarget($targetId);
+        if (!$t) return [];
+        $files = [];
+        foreach (glob(self::backupDir() . '/' . self::slug($t['name']) . '-*') ?: [] as $f) {
+            if (!is_file($f)) continue;
+            $files[] = ['name' => basename($f), 'size' => filesize($f), 'time' => date('Y-m-d H:i:s', filemtime($f))];
+        }
+        usort($files, fn($a, $b) => strcmp($b['time'], $a['time']) ?: strcmp($b['name'], $a['name']));
+        return $files;
+    }
+
+    /** Jalankan backup satu router. Return ['success'=>bool,'message'=>string,'files'=>[]] */
+    public function run(int $id): array
+    {
+        $t = $this->getTarget($id);
+        if (!$t) return ['success' => false, 'message' => 'Router tidak ditemukan'];
+
+        $result = $this->doBackup($t);
+
+        $status = $result['success'] ? 'ok' : 'fail';
+        $msg = mb_substr($result['message'], 0, 250);
+        $stmt = $this->conn->prepare("UPDATE router_backup_targets SET last_backup_at=NOW(), last_status=?, last_message=? WHERE id=?");
+        $stmt->bind_param('ssi', $status, $msg, $id);
+        $stmt->execute();
+
+        if ($result['success']) $this->prune($t);
+        return $result;
+    }
+
+    private function doBackup(array $t): array
+    {
+        $dir = self::backupDir();
+        if (!is_dir($dir) && !@mkdir($dir, 0750, true)) {
+            return ['success' => false, 'message' => "Folder backup $dir tidak bisa dibuat. Buat manual: mkdir -p $dir && chown www-data:www-data $dir && chmod 750 $dir"];
+        }
+        if (!is_writable($dir)) {
+            return ['success' => false, 'message' => "Folder $dir tidak bisa ditulis oleh web server (chown www-data:www-data $dir)"];
+        }
+
+        $base = self::slug($t['name']) . '-' . date('Ymd-His');
+        $remote = 'gacs-' . $base;            // nama file sementara di router
+        $want = [];
+        if (in_array($t['format'], ['rsc', 'both'], true)) $want[] = 'rsc';
+        if (in_array($t['format'], ['backup', 'both'], true)) $want[] = 'backup';
+
+        try {
+            $client = new Client([
+                'host' => $t['host'], 'user' => $t['username'], 'pass' => $t['password'],
+                'port' => (int)$t['api_port'], 'timeout' => 10,
+            ]);
+
+            if (in_array('rsc', $want, true)) {
+                $export = (new Query('/export'))->equal('file', $remote);
+                // v6: export biasa menampilkan password (opsi hide-sensitive untuk menyembunyikan)
+                // v7: export biasa menyembunyikan password (opsi show-sensitive untuk menampilkan)
+                $major = $this->majorVersion($client);
+                if ($major >= 7) {
+                    if (!empty($t['show_sensitive'])) $export->equal('show-sensitive', 'yes');
+                } else {
+                    if (empty($t['show_sensitive'])) $export->equal('hide-sensitive', 'yes');
+                }
+                $client->query($export)->read();
+            }
+            if (in_array('backup', $want, true)) {
+                $client->query((new Query('/system/backup/save'))->equal('name', $remote))->read();
+            }
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'API router gagal: ' . $e->getMessage()];
+        }
+
+        $saved = [];
+        $errors = [];
+        foreach ($want as $ext) {
+            $remoteName = "$remote.$ext";
+            $local = "$dir/$base.$ext";
+            $ok = false;
+            // file dibuat router sedikit tertunda, coba beberapa kali
+            for ($i = 0; $i < 6 && !$ok; $i++) {
+                if ($i > 0) sleep(2);
+                $ok = $this->ftpDownload($t, $remoteName, $local, $err);
+            }
+            if ($ok) { chmod($local, 0640); $saved[] = basename($local); }
+            else $errors[] = "$ext: $err";
+        }
+
+        // bersihkan file sementara di router (abaikan kalau gagal)
+        try {
+            foreach ($want as $ext) {
+                $found = $client->query((new Query('/file/print'))->where('name', "$remote.$ext"))->read();
+                foreach ($found as $f) {
+                    if (isset($f['.id'])) $client->query((new Query('/file/remove'))->equal('.id', $f['.id']))->read();
+                }
+            }
+        } catch (\Throwable $e) { /* diabaikan */ }
+
+        if ($errors) {
+            return ['success' => false, 'message' => 'Download FTP gagal (' . implode('; ', $errors) . ')', 'files' => $saved];
+        }
+        return ['success' => true, 'message' => 'Backup berhasil: ' . implode(', ', $saved), 'files' => $saved];
+    }
+
+    private function majorVersion(Client $client): int
+    {
+        try {
+            $r = $client->query(new Query('/system/resource/print'))->read();
+            return (int)($r[0]['version'] ?? 7);   // contoh "7.14.3 (stable)"
+        } catch (\Throwable $e) {
+            return 7;
+        }
+    }
+
+    private function ftpDownload(array $t, string $remoteName, string $localPath, &$error): bool
+    {
+        $fh = @fopen($localPath, 'wb');
+        if (!$fh) { $error = 'tidak bisa menulis file lokal'; return false; }
+
+        $ch = curl_init('ftp://' . $t['host'] . ':' . (int)$t['ftp_port'] . '/' . rawurlencode($remoteName));
+        curl_setopt_array($ch, [
+            CURLOPT_USERPWD => $t['username'] . ':' . $t['password'],
+            CURLOPT_FILE => $fh,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_FTP_USE_EPSV => false,
+            CURLOPT_FAILONERROR => true,
+        ]);
+        $ok = curl_exec($ch);
+        $error = $ok ? '' : curl_error($ch);
+        curl_close($ch);
+        fclose($fh);
+
+        if (!$ok || filesize($localPath) === 0) {
+            @unlink($localPath);
+            if ($ok) $error = 'file kosong';
+            return false;
+        }
+        return true;
+    }
+
+    /** Sisakan keep_count backup terbaru (per ekstensi). */
+    private function prune(array $t): void
+    {
+        $slug = self::slug($t['name']);
+        foreach (['rsc', 'backup'] as $ext) {
+            $files = glob(self::backupDir() . "/$slug-*.$ext") ?: [];
+            rsort($files);   // nama berisi tanggal, jadi urut nama = urut waktu
+            foreach (array_slice($files, max(1, (int)$t['keep_count'])) as $old) @unlink($old);
+        }
+    }
+}
