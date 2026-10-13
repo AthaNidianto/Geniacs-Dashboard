@@ -25,7 +25,7 @@
         if (!r || !r.success || !r.data.length) { box.innerHTML = '<p class="text-muted mb-0">Belum ada file backup.</p>'; return; }
         box.innerHTML = '<table class="table table-sm align-middle mb-0"><thead><tr><th>File</th><th>Ukuran</th><th>Waktu</th><th></th></tr></thead><tbody>'
             + r.data.map(f => `<tr><td>${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td>${esc(f.time)}</td>
-                <td><a class="btn btn-sm btn-outline-primary" href="/api/router-backup-download.php?file=${encodeURIComponent(f.name)}"><i class="bi bi-download"></i></a></td></tr>`).join('')
+                <td><a class="btn btn-sm btn-outline-primary" href="/api/router-backup-download.php?id=${f.tid}&file=${encodeURIComponent(f.name)}"><i class="bi bi-download"></i></a></td></tr>`).join('')
             + '</tbody></table>';
     }
 

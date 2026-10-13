@@ -66,9 +66,29 @@ class RouterBackup
         return $s !== '' ? $s : 'router';
     }
 
-    private function prefix(array $t): string
+    /** Folder khusus per router, supaya nama file bebas dari bentrok antar router. */
+    public static function targetDir(int $id): string
     {
-        return self::slug($t['name']) . '-' . (int)$t['id'];
+        return self::backupDir() . '/' . $id;
+    }
+
+    private static $dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+    /** Contoh: backup_2026-10-13_Selasa_135429_RB-YUDI-BUYUTAN */
+    private function fileBase(string $identity): string
+    {
+        $safe = trim(preg_replace('/[^A-Za-z0-9_-]+/', '-', $identity), '-');
+        if ($safe === '') $safe = 'router';
+        return 'backup_' . date('Y-m-d') . '_' . self::$dayNames[(int)date('w')] . '_' . date('His') . '_' . $safe;
+    }
+
+    private function identity(Client $client, array $t): string
+    {
+        try {
+            $r = $client->query(new Query('/system/identity/print'))->read();
+            if (!empty($r[0]['name'])) return (string)$r[0]['name'];
+        } catch (\Throwable $e) { /* pakai nama cadangan */ }
+        return (string)$t['name'];
     }
 
     public function listTargets(): array
@@ -149,9 +169,9 @@ class RouterBackup
         $t = $this->getTarget($targetId);
         if (!$t) return [];
         $files = [];
-        foreach (glob(self::backupDir() . '/' . $this->prefix($t) . '-????????-??????.*') ?: [] as $f) {
+        foreach (glob(self::targetDir((int)$t['id']) . '/backup_*') ?: [] as $f) {
             if (!is_file($f)) continue;
-            $files[] = ['name' => basename($f), 'size' => filesize($f), 'time' => date('Y-m-d H:i:s', filemtime($f))];
+            $files[] = ['name' => basename($f), 'tid' => (int)$t['id'], 'size' => filesize($f), 'time' => date('Y-m-d H:i:s', filemtime($f))];
         }
         usort($files, fn($a, $b) => strcmp($b['time'], $a['time']) ?: strcmp($b['name'], $a['name']));
         return $files;
@@ -185,8 +205,12 @@ class RouterBackup
             return ['success' => false, 'message' => "Folder $dir tidak bisa ditulis oleh web server (chown www-data:www-data $dir)"];
         }
 
-        $base = $this->prefix($t) . '-' . date('Ymd-His');
-        $remote = 'gacs-' . $base;            // nama file sementara di router
+        $dir = self::targetDir((int)$t['id']);
+        if (!is_dir($dir) && !@mkdir($dir, 0750, true)) {
+            return ['success' => false, 'message' => "Folder $dir tidak bisa dibuat"];
+        }
+        $remote = 'gacs-tmp-' . date('YmdHis');   // nama file sementara di router
+        $base = null;                              // nama akhir, memakai identity router (diisi setelah login)
         $want = [];
         if (in_array($t['format'], ['rsc', 'both'], true)) $want[] = 'rsc';
         if (in_array($t['format'], ['backup', 'both'], true)) $want[] = 'backup';
@@ -196,6 +220,7 @@ class RouterBackup
                 'host' => $t['host'], 'user' => $t['username'], 'pass' => $t['password'],
                 'port' => (int)$t['api_port'], 'timeout' => 10,
             ]);
+            $base = $this->fileBase($this->identity($client, $t));
 
             if (in_array('rsc', $want, true)) {
                 // /export adalah perintah konsol: lewat API paling andal dijalankan via script sementara di router
@@ -343,9 +368,8 @@ class RouterBackup
     /** Sisakan keep_count backup terbaru (per ekstensi). */
     private function prune(array $t): void
     {
-        $slug = $this->prefix($t);
         foreach (['rsc', 'backup'] as $ext) {
-            $files = glob(self::backupDir() . "/$slug-????????-??????.$ext") ?: [];
+            $files = glob(self::targetDir((int)$t['id']) . "/backup_*.$ext") ?: [];
             rsort($files);   // nama berisi tanggal, jadi urut nama = urut waktu
             foreach (array_slice($files, max(1, (int)$t['keep_count'])) as $old) @unlink($old);
         }
