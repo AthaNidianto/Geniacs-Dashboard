@@ -106,6 +106,9 @@ async function loadDeviceDetail(isAutoRefresh = false) {
         // Update badge
         document.getElementById('device-id-badge').textContent = device.serial_number;
 
+        // Tombol Backup hanya untuk MikroTik
+        if (typeof initRouterBackup === 'function') initRouterBackup(device);
+
         // Update tags badge
         updateTagsBadge(device.tags || []);
 

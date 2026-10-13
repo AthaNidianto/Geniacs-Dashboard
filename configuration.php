@@ -43,11 +43,6 @@ include __DIR__ . '/views/layouts/header.php';
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="rbackup-tab" data-bs-toggle="tab" data-bs-target="#rbackup-config" type="button" role="tab">
-                    <i class="bi bi-cloud-download"></i> Router Backup
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="bot-tab" data-bs-toggle="tab" data-bs-target="#bot-config" type="button" role="tab">
                     <i class="fab fa-telegram"></i> Bot Config
                 </button>
@@ -192,11 +187,6 @@ include __DIR__ . '/views/layouts/header.php';
                         </form>
                     </div>
                 </div>
-            </div>
-
-            <!-- Router Backup Tab -->
-            <div class="tab-pane fade" id="rbackup-config" role="tabpanel">
-                <?php include __DIR__ . '/views/configuration/router-backup.php'; ?>
             </div>
 
             <!-- Bot Config Tab -->

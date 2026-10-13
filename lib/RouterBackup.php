@@ -31,6 +31,7 @@ class RouterBackup
     {
         $this->conn->query("CREATE TABLE IF NOT EXISTS `router_backup_targets` (
             `id` int(11) NOT NULL AUTO_INCREMENT,
+            `device_id` varchar(191) NULL DEFAULT NULL,
             `name` varchar(100) NOT NULL,
             `host` varchar(255) NOT NULL,
             `api_port` int(11) NOT NULL DEFAULT 8728,
@@ -44,9 +45,14 @@ class RouterBackup
             `last_status` varchar(10) NULL DEFAULT NULL,
             `last_message` varchar(255) NULL DEFAULT NULL,
             `created_at` timestamp NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`)
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uniq_device` (`device_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         // tabel lama (kalau sudah terlanjur dibuat sebelum kolom ini ada)
+        $c = $this->conn->query("SHOW COLUMNS FROM router_backup_targets LIKE 'device_id'");
+        if ($c && $c->num_rows === 0) {
+            $this->conn->query("ALTER TABLE router_backup_targets ADD `device_id` varchar(191) NULL DEFAULT NULL AFTER `id`, ADD UNIQUE KEY `uniq_device` (`device_id`)");
+        }
         $c = $this->conn->query("SHOW COLUMNS FROM router_backup_targets LIKE 'show_sensitive'");
         if ($c && $c->num_rows === 0) {
             $this->conn->query("ALTER TABLE router_backup_targets ADD `show_sensitive` tinyint(1) NOT NULL DEFAULT 0 AFTER `keep_count`");
@@ -60,10 +66,15 @@ class RouterBackup
         return $s !== '' ? $s : 'router';
     }
 
+    private function prefix(array $t): string
+    {
+        return self::slug($t['name']) . '-' . (int)$t['id'];
+    }
+
     public function listTargets(): array
     {
         $rows = [];
-        $res = $this->conn->query("SELECT id,name,host,api_port,ftp_port,username,format,keep_count,show_sensitive,last_backup_at,last_status,last_message FROM router_backup_targets ORDER BY name");
+        $res = $this->conn->query("SELECT id,device_id,name,host,api_port,ftp_port,username,format,keep_count,show_sensitive,last_backup_at,last_status,last_message FROM router_backup_targets ORDER BY name");
         while ($res && ($r = $res->fetch_assoc())) $rows[] = $r;
         return $rows;
     }
@@ -77,9 +88,22 @@ class RouterBackup
         return $r ?: null;
     }
 
+    /** Setting backup milik satu device GenieACS (tanpa password). */
+    public function getByDevice(string $deviceId): ?array
+    {
+        $stmt = $this->conn->prepare("SELECT id,device_id,name,host,api_port,ftp_port,username,format,keep_count,show_sensitive,last_backup_at,last_status,last_message FROM router_backup_targets WHERE device_id = ?");
+        $stmt->bind_param('s', $deviceId);
+        $stmt->execute();
+        $r = $stmt->get_result()->fetch_assoc();
+        return $r ?: null;
+    }
+
     public function saveTarget(array $d): array
     {
-        $id = (int)($d['id'] ?? 0);
+        $deviceId = trim($d['device_id'] ?? '');
+        if ($deviceId === '') return ['success' => false, 'message' => 'device_id wajib'];
+        $existing = $this->getByDevice($deviceId);
+        $id = $existing ? (int)$existing['id'] : 0;
         $name = trim($d['name'] ?? '');
         $host = trim($d['host'] ?? '');
         $user = trim($d['username'] ?? '');
@@ -105,8 +129,8 @@ class RouterBackup
             $stmt->bind_param('ssiisssiii', $name, $host, $apiPort, $ftpPort, $user, $pass, $format, $keep, $sens, $id);
         } else {
             if ($pass === '') return ['success' => false, 'message' => 'Password wajib diisi'];
-            $stmt = $this->conn->prepare("INSERT INTO router_backup_targets (name,host,api_port,ftp_port,username,password,format,keep_count,show_sensitive) VALUES (?,?,?,?,?,?,?,?,?)");
-            $stmt->bind_param('ssiisssii', $name, $host, $apiPort, $ftpPort, $user, $pass, $format, $keep, $sens);
+            $stmt = $this->conn->prepare("INSERT INTO router_backup_targets (name,host,api_port,ftp_port,username,password,format,keep_count,show_sensitive,device_id) VALUES (?,?,?,?,?,?,?,?,?,?)");
+            $stmt->bind_param('ssiisssiis', $name, $host, $apiPort, $ftpPort, $user, $pass, $format, $keep, $sens, $deviceId);
         }
         if (!$stmt->execute()) return ['success' => false, 'message' => 'Gagal menyimpan'];
         return ['success' => true, 'message' => 'Router disimpan'];
@@ -125,7 +149,7 @@ class RouterBackup
         $t = $this->getTarget($targetId);
         if (!$t) return [];
         $files = [];
-        foreach (glob(self::backupDir() . '/' . self::slug($t['name']) . '-*') ?: [] as $f) {
+        foreach (glob(self::backupDir() . '/' . $this->prefix($t) . '-????????-??????.*') ?: [] as $f) {
             if (!is_file($f)) continue;
             $files[] = ['name' => basename($f), 'size' => filesize($f), 'time' => date('Y-m-d H:i:s', filemtime($f))];
         }
@@ -161,7 +185,7 @@ class RouterBackup
             return ['success' => false, 'message' => "Folder $dir tidak bisa ditulis oleh web server (chown www-data:www-data $dir)"];
         }
 
-        $base = self::slug($t['name']) . '-' . date('Ymd-His');
+        $base = $this->prefix($t) . '-' . date('Ymd-His');
         $remote = 'gacs-' . $base;            // nama file sementara di router
         $want = [];
         if (in_array($t['format'], ['rsc', 'both'], true)) $want[] = 'rsc';
@@ -263,9 +287,9 @@ class RouterBackup
     /** Sisakan keep_count backup terbaru (per ekstensi). */
     private function prune(array $t): void
     {
-        $slug = self::slug($t['name']);
+        $slug = $this->prefix($t);
         foreach (['rsc', 'backup'] as $ext) {
-            $files = glob(self::backupDir() . "/$slug-*.$ext") ?: [];
+            $files = glob(self::backupDir() . "/$slug-????????-??????.$ext") ?: [];
             rsort($files);   // nama berisi tanggal, jadi urut nama = urut waktu
             foreach (array_slice($files, max(1, (int)$t['keep_count'])) as $old) @unlink($old);
         }
