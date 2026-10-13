@@ -198,16 +198,15 @@ class RouterBackup
             ]);
 
             if (in_array('rsc', $want, true)) {
-                $export = (new Query('/export'))->equal('file', $remote);
-                // v6: export biasa menampilkan password (opsi hide-sensitive untuk menyembunyikan)
-                // v7: export biasa menyembunyikan password (opsi show-sensitive untuk menampilkan)
+                // /export adalah perintah konsol: lewat API paling andal dijalankan via script sementara di router
+                $cmd = '/export file=' . $remote;
                 $major = $this->majorVersion($client);
-                if ($major >= 7) {
-                    if (!empty($t['show_sensitive'])) $export->equal('show-sensitive', 'yes');
-                } else {
-                    if (empty($t['show_sensitive'])) $export->equal('hide-sensitive', 'yes');
-                }
-                $err = $this->trapMessage($client->query($export)->read());
+                // v6: export biasa menampilkan password (hide-sensitive untuk menyembunyikan)
+                // v7: export biasa menyembunyikan password (show-sensitive untuk menampilkan)
+                if ($major >= 7 && !empty($t['show_sensitive'])) $cmd = '/export show-sensitive file=' . $remote;
+                if ($major < 7 && empty($t['show_sensitive'])) $cmd = '/export hide-sensitive file=' . $remote;
+
+                $err = $this->runConsole($client, $cmd, !empty($t['show_sensitive']), $remote);
                 if ($err) return ['success' => false, 'message' => "Router menolak /export: $err"];
             }
             if (in_array('backup', $want, true)) {
@@ -256,6 +255,31 @@ class RouterBackup
         return ['success' => true, 'message' => 'Backup berhasil: ' . implode(', ', $saved), 'files' => $saved];
     }
 
+    /** Jalankan perintah konsol lewat script sementara. Return pesan error atau null. */
+    private function runConsole(Client $client, string $command, bool $sensitive, string $tag): ?string
+    {
+        $scriptName = 'gacs-tmp-' . $tag;
+        $policy = 'read,write,policy,test' . ($sensitive ? ',sensitive' : '');
+        $id = null;
+        try {
+            $r = $client->query((new Query('/system/script/add'))
+                ->equal('name', $scriptName)->equal('source', $command)->equal('policy', $policy))->read();
+            if ($e = $this->trapMessage($r)) return $e;
+            $id = $r['after']['ret'] ?? ($r[0]['ret'] ?? null);
+            if (!$id) return 'gagal membuat script sementara di router';
+
+            $r = $client->query((new Query('/system/script/run'))->equal('number', $id))->read();
+            if ($e = $this->trapMessage($r)) return $e;
+            return null;
+        } catch (\Throwable $e) {
+            return $e->getMessage();
+        } finally {
+            if ($id) {
+                try { $client->query((new Query('/system/script/remove'))->equal('.id', $id))->read(); } catch (\Throwable $e) { /* diabaikan */ }
+            }
+        }
+    }
+
     /** Ambil pesan error dari respons API RouterOS (!trap), atau null kalau sukses. */
     private function trapMessage($response): ?string
     {
@@ -271,7 +295,7 @@ class RouterBackup
 
     private function waitForFile(Client $client, string $name): bool
     {
-        for ($i = 0; $i < 10; $i++) {
+        for ($i = 0; $i < 15; $i++) {
             $found = $client->query((new Query('/file/print'))->where('name', $name))->read();
             if (!empty($found) && isset($found[0]['name'])) return true;
             sleep(1);
