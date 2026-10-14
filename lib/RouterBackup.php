@@ -41,6 +41,7 @@ class RouterBackup
             `format` enum('rsc','backup','both') NOT NULL DEFAULT 'both',
             `keep_count` int(11) NOT NULL DEFAULT 14,
             `show_sensitive` tinyint(1) NOT NULL DEFAULT 0,
+            `identity` varchar(100) NULL DEFAULT NULL,
             `last_backup_at` datetime NULL DEFAULT NULL,
             `last_status` varchar(10) NULL DEFAULT NULL,
             `last_message` varchar(255) NULL DEFAULT NULL,
@@ -52,6 +53,10 @@ class RouterBackup
         $c = $this->conn->query("SHOW COLUMNS FROM router_backup_targets LIKE 'device_id'");
         if ($c && $c->num_rows === 0) {
             $this->conn->query("ALTER TABLE router_backup_targets ADD `device_id` varchar(191) NULL DEFAULT NULL AFTER `id`, ADD UNIQUE KEY `uniq_device` (`device_id`)");
+        }
+        $c = $this->conn->query("SHOW COLUMNS FROM router_backup_targets LIKE 'identity'");
+        if ($c && $c->num_rows === 0) {
+            $this->conn->query("ALTER TABLE router_backup_targets ADD `identity` varchar(100) NULL DEFAULT NULL AFTER `show_sensitive`");
         }
         $c = $this->conn->query("SHOW COLUMNS FROM router_backup_targets LIKE 'show_sensitive'");
         if ($c && $c->num_rows === 0) {
@@ -80,6 +85,43 @@ class RouterBackup
         $safe = trim(preg_replace('/[^A-Za-z0-9_-]+/', '-', $identity), '-');
         if ($safe === '') $safe = 'router';
         return 'backup_' . date('Y-m-d') . '_' . self::$dayNames[(int)date('w')] . '_' . date('His') . '_' . $safe;
+    }
+
+    /** Peta device_id => identity untuk daftar device (ringan, tanpa membuat tabel). */
+    public static function identityMap($conn): array
+    {
+        $map = [];
+        try {
+            $res = @$conn->query("SELECT device_id, identity FROM router_backup_targets WHERE device_id IS NOT NULL AND identity IS NOT NULL AND identity <> ''");
+            while ($res && ($r = $res->fetch_assoc())) $map[$r['device_id']] = $r['identity'];
+        } catch (\Throwable $e) { /* tabel/kolom belum ada: abaikan */ }
+        return $map;
+    }
+
+    /** Coba ambil identity dari router lalu simpan (dipakai saat Simpan dan saat backup). Gagal = diam. */
+    public function refreshIdentity(int $id): ?string
+    {
+        $t = $this->getTarget($id);
+        if (!$t) return null;
+        try {
+            $client = new Client([
+                'host' => $t['host'], 'user' => $t['username'], 'pass' => $t['password'],
+                'port' => (int)$t['api_port'], 'timeout' => 4,
+            ]);
+            $r = $client->query(new Query('/system/identity/print'))->read();
+            $name = !empty($r[0]['name']) ? (string)$r[0]['name'] : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if ($name) $this->storeIdentity($id, $name);
+        return $name;
+    }
+
+    private function storeIdentity(int $id, string $name): void
+    {
+        $stmt = $this->conn->prepare("UPDATE router_backup_targets SET identity=? WHERE id=?");
+        $stmt->bind_param('si', $name, $id);
+        $stmt->execute();
     }
 
     private function identity(Client $client, array $t): string
@@ -111,7 +153,7 @@ class RouterBackup
     /** Setting backup milik satu device GenieACS (tanpa password). */
     public function getByDevice(string $deviceId): ?array
     {
-        $stmt = $this->conn->prepare("SELECT id,device_id,name,host,api_port,ftp_port,username,format,keep_count,show_sensitive,last_backup_at,last_status,last_message FROM router_backup_targets WHERE device_id = ?");
+        $stmt = $this->conn->prepare("SELECT id,device_id,name,host,api_port,ftp_port,username,format,keep_count,show_sensitive,identity,last_backup_at,last_status,last_message FROM router_backup_targets WHERE device_id = ?");
         $stmt->bind_param('s', $deviceId);
         $stmt->execute();
         $r = $stmt->get_result()->fetch_assoc();
@@ -220,7 +262,9 @@ class RouterBackup
                 'host' => $t['host'], 'user' => $t['username'], 'pass' => $t['password'],
                 'port' => (int)$t['api_port'], 'timeout' => 10,
             ]);
-            $base = $this->fileBase($this->identity($client, $t));
+            $identityName = $this->identity($client, $t);
+            if ($identityName !== (string)$t['name']) $this->storeIdentity((int)$t['id'], $identityName);
+            $base = $this->fileBase($identityName);
 
             if (in_array('rsc', $want, true)) {
                 // /export adalah perintah konsol: lewat API paling andal dijalankan via script sementara di router

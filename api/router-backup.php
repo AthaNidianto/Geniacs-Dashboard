@@ -21,7 +21,13 @@ switch ($action) {
     case 'get':
         jsonResponse(['success' => true, 'data' => $target, 'dir' => App\RouterBackup::backupDir()]);
     case 'save':
-        jsonResponse($rb->saveTarget($data));
+        $res = $rb->saveTarget($data);
+        if (!empty($res['success'])) {
+            // Ambil identity router supaya muncul di daftar MikroTik (gagal = diabaikan)
+            $saved = $rb->getByDevice($deviceId);
+            if ($saved) $res['identity'] = $rb->refreshIdentity((int)$saved['id']);
+        }
+        jsonResponse($res);
     case 'delete':
         jsonResponse(['success' => $target ? $rb->deleteTarget((int)$target['id']) : true]);
     case 'run':

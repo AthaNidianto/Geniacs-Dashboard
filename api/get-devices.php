@@ -50,6 +50,8 @@ try {
         'InternetGatewayDevice.DeviceInfo.HardwareVersion',
         'InternetGatewayDevice.DeviceInfo.SoftwareVersion',
         'InternetGatewayDevice.DeviceInfo.UpTime',
+        'InternetGatewayDevice.DeviceInfo.X_MIKROTIK_SystemIdentity',   // identity router MikroTik
+        'Device.DeviceInfo.X_MIKROTIK_SystemIdentity',
         'InternetGatewayDevice.DeviceInfo.Temperature',
         'InternetGatewayDevice.ManagementServer.ConnectionRequestURL',
         'InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress',
@@ -90,6 +92,8 @@ try {
 
     if ($devicesResult['success']) {
         $devices = [];
+        // Identity router MikroTik tidak dikirim lewat TR-069; diambil dari data Router Backup
+        $identityMap = App\RouterBackup::identityMap(getDBConnection());
 
         // Use selected parser
         foreach ($devicesResult['data'] as $device) {
@@ -99,6 +103,9 @@ try {
             } else {
                 // Full parser - complete data extraction
                 $parsed = $genieacs->parseDeviceData($device);
+            }
+            if ($identityMap && isset($parsed['device_id'], $identityMap[$parsed['device_id']])) {
+                $parsed['identity'] = $identityMap[$parsed['device_id']];
             }
             $devices[] = $parsed;
         }
