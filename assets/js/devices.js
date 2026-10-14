@@ -177,10 +177,10 @@ async function loadDevices(isAutoRefresh = false) {
             resetSortIcons();
 
             // Generate initial table header for "ONU" tab (default)
-            generateTableHeader('onu');
+            generateTableHeader(currentFilterType || 'onu');
 
-            // Update search placeholder for ONU tab (default)
-            updateSearchPlaceholder('onu');
+            // Placeholder pencarian mengikuti tab yang sedang aktif
+            updateSearchPlaceholder(currentFilterType || 'onu');
         }
 
         // Update tab counts dulu (nulis total mentah)...
@@ -237,8 +237,14 @@ async function renderDevices(devices) {
     const tbody = document.getElementById('devices-tbody');
     tbody.innerHTML = '';
 
+    // Pastikan header tabel selalu cocok dengan tab aktif (ONU / MikroTik), apa pun jalur render-nya
+    const headerEl = document.getElementById('table-header');
+    if (headerEl && headerEl.dataset.type !== currentFilterType) {
+        generateTableHeader(currentFilterType);
+    }
+
     // Determine appropriate colspan based on current filter type
-    const colspan = currentFilterType === 'mikrotik' ? 9 : (currentFilterType === 'onu' ? 12 : 6);
+    const colspan = currentFilterType === 'mikrotik' ? 10 : (currentFilterType === 'onu' ? 12 : 6);
 
     if (devices.length === 0) {
         // If showing infrastructure items, show map items instead
@@ -413,6 +419,7 @@ async function renderDevices(devices) {
                     <input type="checkbox" class="device-checkbox" value="${encodeURIComponent(device.device_id)}" onchange="updateBulkActionButtons()">
                 </td>
                 <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>
+                <td data-sort-value="${device.identity || ''}">${device.identity ? '<strong>' + device.identity + '</strong>' : '<span class="text-muted">-</span>'}</td>
                 <td>${device.mac_address}</td>
                 <td data-sort-value="${device.product_class || ''}">${device.product_class || 'N/A'}</td>
                 <td data-sort-value="${ipAddress}">${ipDisplay}</td>
@@ -624,6 +631,7 @@ function refreshTypeBadges(renderedCount) {
 // Generate table header based on device type
 function generateTableHeader(type) {
     const tableHeader = document.getElementById('table-header');
+    tableHeader.dataset.type = type;   // dipakai renderDevices untuk mendeteksi header yang tidak sesuai
 
     if (type === 'mikrotik') {
         const tagsDisplayMk = tagsColumnVisible ? '' : 'none';
@@ -634,6 +642,9 @@ function generateTableHeader(type) {
                     <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()" title="Select All">
                 </th>
                 <th>SN</th>
+                <th class="sortable" onclick="sortTable('identity')" style="cursor: pointer;">
+                    Identity <i class="bi bi-chevron-expand sort-icon"></i>
+                </th>
                 <th>MAC</th>
                 <th class="sortable" onclick="sortTable('product_class')" style="cursor: pointer;">
                     Model <i class="bi bi-chevron-expand sort-icon"></i>
@@ -756,7 +767,7 @@ function extractIP(ipString) {
 function updateSearchPlaceholder(type) {
     const searchInput = document.getElementById('search-input');
     if (isDeviceTab(type)) {
-        searchInput.placeholder = 'Search by Serial Number, MAC Address, or Tags...';
+        searchInput.placeholder = type === 'mikrotik' ? 'Search by Serial Number, Identity, MAC Address, or Tags...' : 'Search by Serial Number, MAC Address, or Tags...';
     } else {
         searchInput.placeholder = 'Search by Name...';
     }
@@ -780,6 +791,10 @@ function applySorting(devices, column, direction) {
         let valueA, valueB;
 
         switch (column) {
+            case 'identity':
+                valueA = (a.identity || '').toLowerCase();
+                valueB = (b.identity || '').toLowerCase();
+                break;
             case 'product_class':
                 valueA = (a.product_class || '').toLowerCase();
                 valueB = (b.product_class || '').toLowerCase();
@@ -855,7 +870,15 @@ function updateSortIcons(column, direction) {
     });
 
     // Update active sort icon (indices shifted +1 due to checkbox column)
-    const columnMap = {
+    // Urutan kolom MikroTik beda dari ONU: SN, Identity, MAC, Model, IP, Client, Status, Tags
+    const columnMap = currentFilterType === 'mikrotik' ? {
+        'identity': 3,
+        'product_class': 5,
+        'ip': 6,
+        'connected_clients': 7,
+        'status': 8,
+        'tags': 9
+    } : {
         'product_class': 4,
         'ip': 5,
         'ssid': 6,
@@ -1443,11 +1466,12 @@ function applyRbFilter(keepPage = false) {
             const serialNumber = (device.serial_number || '').toLowerCase();
             const macAddress = (device.mac_address || '').toLowerCase();
             const pppoe_username = (device.pppoe_username || '').toLowerCase();
+            const identity = (device.identity || '').toLowerCase();
             let tagsMatch = false;
             if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
                 tagsMatch = device.tags.some(tag => tag.toLowerCase().includes(searchTerm));
             }
-            return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || pppoe_username.includes(searchTerm) || tagsMatch;
+            return serialNumber.includes(searchTerm) || macAddress.includes(searchTerm) || pppoe_username.includes(searchTerm) || identity.includes(searchTerm) || tagsMatch;
         });
     }
 

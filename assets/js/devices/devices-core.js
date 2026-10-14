@@ -73,10 +73,10 @@ async function loadDevices(isAutoRefresh = false) {
             resetSortIcons();
 
             // Generate initial table header for "ONU" tab (default)
-            generateTableHeader('onu');
+            generateTableHeader(currentFilterType || 'onu');
 
-            // Update search placeholder for ONU tab (default)
-            updateSearchPlaceholder('onu');
+            // Placeholder pencarian mengikuti tab yang sedang aktif
+            updateSearchPlaceholder(currentFilterType || 'onu');
         }
 
         // Re-apply current filter and sorting
