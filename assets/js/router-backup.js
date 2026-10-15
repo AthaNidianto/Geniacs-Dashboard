@@ -59,13 +59,17 @@
             host: $('rb-host').value, api_port: $('rb-api-port').value, ftp_port: $('rb-ftp-port').value,
             username: $('rb-user').value, password: $('rb-pass').value,
             format: $('rb-format').value, keep_count: $('rb-keep').value, show_sensitive: $('rb-sens').checked
-        });
+        }, 30000);
         if (!(r && r.success)) showToast((r && r.message) || 'Gagal menyimpan', 'danger');
-        return !!(r && r.success);
+        return r && r.success ? r : null;
     }
 
     window.rbSave = async function () {
-        if (await save()) { showToast('Pengaturan backup disimpan', 'success'); $('rb-pass').value = ''; }
+        const r = await save();
+        if (!r) return;
+        $('rb-pass').value = '';
+        if (r.identity) showToast('Tersimpan. Identity router: ' + r.identity, 'success');
+        else showToast('Tersimpan, tapi identity router belum terbaca (cek host, port API, user, dan password). Isi password kalau belum pernah diisi.', 'warning', 6000);
     };
 
     window.rbRun = async function () {
