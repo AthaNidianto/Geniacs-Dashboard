@@ -39,6 +39,7 @@
                 <span>Dashboard</span>
             </a>
         </li>
+        <?php if (!isMonitor()): ?>
         <li>
             <a href="/devices.php" class="<?php echo ($currentPage ?? '') === 'devices' ? 'active' : ''; ?>" data-tooltip="Devices">
                 <i class="bi bi-router"></i>
@@ -57,6 +58,7 @@
                 <span>Configuration</span>
             </a>
         </li>
+        <?php endif; ?>
         <li>
             <a href="/logout.php" data-tooltip="Logout">
                 <i class="bi bi-box-arrow-right"></i>
@@ -82,4 +84,4 @@
         </div>
 
         <!-- Content Wrapper -->
-        <div class="content-wrapper">  
+        <div class="content-wrapper">

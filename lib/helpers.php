@@ -21,6 +21,57 @@ function requireLogin() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ROLE: 'admin' (semua menu) atau 'monitor' (hanya halaman Dashboard)
+// ---------------------------------------------------------------------------
+function currentRole() {
+    return $_SESSION['role'] ?? 'admin';
+}
+
+function isMonitor() {
+    return isLoggedIn() && currentRole() === 'monitor';
+}
+
+// Halaman/API yang boleh dibuka user role monitor (path relatif terhadap root aplikasi)
+function monitorAllowedPaths() {
+    return [
+        '/dashboard.php',
+        '/api/dashboard-stats.php',
+        '/api/get-status-history.php',
+        '/login.php',
+        '/logout.php',
+    ];
+}
+
+// Dipanggil otomatis dari config.php di setiap request: user monitor ditolak di luar daftar di atas.
+function enforceRoleAccess() {
+    if (PHP_SAPI === 'cli' || !isMonitor()) {
+        return;
+    }
+    $root = realpath(__DIR__ . '/..');
+    $script = realpath($_SERVER['SCRIPT_FILENAME'] ?? '');
+    $rel = ($root && $script && strpos($script, $root) === 0) ? substr($script, strlen($root)) : ($_SERVER['SCRIPT_NAME'] ?? '');
+
+    if (in_array($rel, monitorAllowedPaths(), true)) {
+        return;
+    }
+    if (strpos($rel, '/api/') === 0) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Akses ditolak untuk role monitor']);
+        exit;
+    }
+    redirect('/dashboard.php');
+}
+
+// Tambah kolom users.role kalau belum ada (migrasi otomatis, aman dipanggil berulang)
+function ensureUserRoleColumn($conn) {
+    $c = $conn->query("SHOW COLUMNS FROM users LIKE 'role'");
+    if ($c && $c->num_rows === 0) {
+        $conn->query("ALTER TABLE users ADD `role` varchar(20) NOT NULL DEFAULT 'admin' AFTER `password`");
+    }
+}
+
 // Sanitize input
 function clean($data) {
     return htmlspecialchars(strip_tags(trim($data)), ENT_QUOTES, 'UTF-8');

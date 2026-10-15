@@ -7,6 +7,8 @@ define('ASSETS_URL', APP_URL . '/assets');
 // Session Configuration
 ini_set('session.cookie_httponly', 1);
 ini_set('session.use_strict_mode', 1);
+// Sesi disimpan lama di server (user monitor tidak boleh timeout). Cookie user biasa tetap berakhir saat browser ditutup.
+ini_set('session.gc_maxlifetime', 31536000);
 session_start();
 
 // Timezone
@@ -25,3 +27,6 @@ require_once __DIR__ . '/database.php';
 
 // Helper Functions
 require_once __DIR__ . '/../lib/helpers.php';
+
+// Batasi akses user role monitor (hanya Dashboard)
+enforceRoleAccess();

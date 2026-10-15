@@ -17,15 +17,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Username dan password harus diisi';
     } else {
         $conn = getDBConnection();
-        $stmt = $conn->prepare("SELECT id, username, password FROM users WHERE username = ?");
+        ensureUserRoleColumn($conn);
+        $stmt = $conn->prepare("SELECT id, username, password, role FROM users WHERE username = ?");
         $stmt->bind_param("s", $username);
         $stmt->execute();
         $result = $stmt->get_result();
 
         if ($user = $result->fetch_assoc()) {
             if (password_verify($password, $user['password'])) {
+                // User monitor: cookie sesi dibuat awet 1 tahun supaya layar monitoring tidak perlu login ulang
+                if (($user['role'] ?? 'admin') === 'monitor') {
+                    session_set_cookie_params([
+                        'lifetime' => 365 * 24 * 3600,
+                        'path' => '/',
+                        'secure' => !empty($_SERVER['HTTPS']),
+                        'httponly' => true,
+                        'samesite' => 'Lax',
+                    ]);
+                }
+                session_regenerate_id(true);
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['username'] = $user['username'];
+                $_SESSION['role'] = $user['role'] ?? 'admin';
                 redirect('/dashboard.php');
             } else {
                 $error = 'Username atau password salah';
