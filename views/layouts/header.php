@@ -85,7 +85,7 @@
         <div class="topbar">
             <h4><?php echo $pageTitle ?? APP_NAME; ?></h4>
             <div class="user-info">
-                <span><i class="bi bi-person-circle"></i> <?php echo $_SESSION['username'] ?? 'User'; ?></span>
+                <span><i class="bi bi-person-circle"></i> <?php echo htmlspecialchars($_SESSION['username'] ?? 'User', ENT_QUOTES, 'UTF-8'); ?></span>
             </div>
         </div>
 

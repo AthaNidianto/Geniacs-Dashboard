@@ -150,6 +150,11 @@ if (version_compare($phpVersion, '7.4', '<')) {
     ];
 }
 
+// Tamu (belum login) hanya melihat status ringkas; detail internal (error DB, host, versi PHP, disk) disembunyikan.
+if (!function_exists('isLoggedIn') || !isLoggedIn()) {
+    $health = ['status' => $health['status'], 'timestamp' => $health['timestamp']];
+}
+
 // Return appropriate HTTP status code
 http_response_code($health['status'] === 'healthy' ? 200 : 503);
 

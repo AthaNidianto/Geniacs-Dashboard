@@ -13,7 +13,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = clean($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if (empty($username) || empty($password)) {
+    // Batasi tebak password: maksimal 8 login gagal per IP dalam 15 menit
+    $tooMany = \App\AuditLog::recentFailedLogins(\App\AuditLog::clientIp(), 15) >= 8;
+
+    if ($tooMany) {
+        $error = 'Terlalu banyak percobaan login gagal. Coba lagi dalam 15 menit.';
+        \App\AuditLog::log('Login diblokir', $username, null, false, 'Terlalu banyak percobaan gagal', $username);
+    } elseif (empty($username) || empty($password)) {
         $error = 'Username dan password harus diisi';
     } else {
         $conn = getDBConnection();
@@ -114,7 +120,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-
+    <div class="footer" style="position: fixed; bottom: 0; width: 100%; background: transparent; color: white;">
+        Made by <a href="https://github.com/safrinnetwork/" target="_blank" style="color: white;">Mostech</a>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

@@ -1,5 +1,19 @@
 // GACS Dashboard JavaScript Utilities
 
+// Keamanan XSS: data dari ONU/CPE (SSID, hostname, versi firmware, nama WAN, dll) TIDAK boleh dimasukkan
+// mentah ke innerHTML. Selalu lewat escapeHtml() (teks / atribut) atau escapeAttrJson() (JSON di dalam atribut).
+function escapeHtml(v) {
+    return String(v === null || v === undefined ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// JSON untuk dipakai di dalam atribut HTML, misal onclick='fn(${escapeAttrJson(obj)})'.
+// Browser men-decode entity sebelum JS jalan, jadi JSON-nya tetap utuh tapi tidak bisa keluar dari atribut.
+function escapeAttrJson(obj) {
+    return escapeHtml(JSON.stringify(obj));
+}
+
 // Toast Notification
 function showToast(message, type = 'info', duration = 3000) {
     const toast = document.createElement('div');

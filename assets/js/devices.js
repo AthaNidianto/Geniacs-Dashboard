@@ -341,7 +341,7 @@ async function renderDevices(devices) {
         if (device.status !== 'online' || isNaN(rxPower) || rxPower === -999) {
             rxBadgeClass = 'bg-secondary';
             if (!isNaN(rxPower) && rxPower !== -999) {
-                rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
+                rxDisplay = `<span class="badge ${rxBadgeClass}">${escapeHtml(device.rx_power)} dBm</span>`;
             } else {
                 rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
             }
@@ -364,7 +364,7 @@ async function renderDevices(devices) {
                 // Di bawah -28.00 -> Merah
                 rxBadgeClass = 'bg-danger';
             }
-            rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
+            rxDisplay = `<span class="badge ${rxBadgeClass}">${escapeHtml(device.rx_power)} dBm</span>`;
         }
 
         // Map button - conditional based on registration status
@@ -402,7 +402,7 @@ async function renderDevices(devices) {
         let tagsDisplay = '';
         let tagsSortValue = '';
         if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
-            tagsDisplay = device.tags.map(tag => `<span class="badge bg-info me-1">${tag}</span>`).join('');
+            tagsDisplay = device.tags.map(tag => `<span class="badge bg-info me-1">${escapeHtml(tag)}</span>`).join('');
             tagsSortValue = device.tags.join(', '); // For sorting: join tags as string
         } else {
             tagsDisplay = '<span class="text-muted">-</span>';
@@ -418,16 +418,16 @@ async function renderDevices(devices) {
                 <td>
                     <input type="checkbox" class="device-checkbox" value="${encodeURIComponent(device.device_id)}" onchange="updateBulkActionButtons()">
                 </td>
-                <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>
-                <td data-sort-value="${device.identity || ''}">${device.identity ? '<strong>' + device.identity + '</strong>' : '<span class="text-muted">-</span>'}</td>
-                <td>${device.mac_address}</td>
-                <td data-sort-value="${device.product_class || ''}">${device.product_class || 'N/A'}</td>
+                <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${escapeHtml(device.serial_number)}</a></td>
+                <td data-sort-value="${escapeHtml(device.identity || '')}">${device.identity ? '<strong>' + escapeHtml(device.identity) + '</strong>' : '<span class="text-muted">-</span>'}</td>
+                <td>${escapeHtml(device.mac_address)}</td>
+                <td data-sort-value="${escapeHtml(device.product_class || '')}">${escapeHtml(device.product_class || 'N/A')}</td>
                 <td data-sort-value="${ipAddress}">${ipDisplay}</td>
                 <td data-sort-value="${clientsCount}" class="text-center">${clientsBadge}</td>
-                <td data-sort-value="${device.status}">${statusDisplay}</td>
-                <td class="tags-column" data-sort-value="${tagsSortValue}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
+                <td data-sort-value="${escapeHtml(device.status)}">${statusDisplay}</td>
+                <td class="tags-column" data-sort-value="${escapeHtml(tagsSortValue)}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
+                    <button class="btn btn-sm btn-primary" data-id="${escapeHtml(device.device_id)}" onclick="summonDeviceQuick(this.dataset.id)" title="Summon Device">
                         <i class="bi bi-lightning-charge"></i>
                     </button>
                 </td>
@@ -440,22 +440,22 @@ async function renderDevices(devices) {
             <td>
                 <input type="checkbox" class="device-checkbox" value="${encodeURIComponent(device.device_id)}" onchange="updateBulkActionButtons()">
             </td>
-            <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>
-            <td>${device.mac_address}</td>
-            <td data-sort-value="${device.product_class || ''}">${device.product_class || 'N/A'}</td>
+            <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${escapeHtml(device.serial_number)}</a></td>
+            <td>${escapeHtml(device.mac_address)}</td>
+            <td data-sort-value="${escapeHtml(device.product_class || '')}">${escapeHtml(device.product_class || 'N/A')}</td>
             <td data-sort-value="${ipAddress}">${ipDisplay}</td>
-            <td data-sort-value="${device.wifi_ssid}">${device.wifi_ssid}</td>
-            <td data-sort-value="${device.pppoe_username || ''}">${device.pppoe_username || 'N/A'}</td>
+            <td data-sort-value="${escapeHtml(device.wifi_ssid)}">${escapeHtml(device.wifi_ssid)}</td>
+            <td data-sort-value="${escapeHtml(device.pppoe_username || '')}">${escapeHtml(device.pppoe_username || 'N/A')}</td>
             <td data-sort-value="${parseFloat(device.rx_power) || -999}">${rxDisplay}</td>
-            <td data-sort-value="${parseFloat(device.temperature) || -999}">${device.temperature}°C</td>
+            <td data-sort-value="${parseFloat(device.temperature) || -999}">${escapeHtml(device.temperature)}°C</td>
             <td data-sort-value="${clientsCount}" class="text-center">${clientsBadge}</td>
-            <td data-sort-value="${device.status}">${statusDisplay}</td>
-            <td class="tags-column" data-sort-value="${tagsSortValue}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
+            <td data-sort-value="${escapeHtml(device.status)}">${statusDisplay}</td>
+            <td class="tags-column" data-sort-value="${escapeHtml(tagsSortValue)}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
             <td>
-                <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
+                <button class="btn btn-sm btn-primary" data-id="${escapeHtml(device.device_id)}" onclick="summonDeviceQuick(this.dataset.id)" title="Summon Device">
                     <i class="bi bi-lightning-charge"></i>
                 </button>
-                <button class="btn btn-sm btn-danger" onclick="rebootDeviceQuick('${device.device_id}')" title="Reboot ONU">
+                <button class="btn btn-sm btn-danger" data-id="${escapeHtml(device.device_id)}" onclick="rebootDeviceQuick(this.dataset.id)" title="Reboot ONU">
                     <i class="bi bi-arrow-repeat"></i>
                 </button>
             </td>
@@ -520,7 +520,7 @@ function renderMapItems(itemType) {
         const lng = parseFloat(item.longitude).toFixed(6);
 
         // For OLT, show server name in parentheses
-        const displayName = itemType === 'olt' ? `${item.name} (${item.server_name})` : item.name;
+        const displayName = itemType === 'olt' ? `${escapeHtml(item.name)} (${escapeHtml(item.server_name)})` : escapeHtml(item.name);
 
         row.innerHTML = `
             <td>${displayName}</td>
@@ -529,7 +529,7 @@ function renderMapItems(itemType) {
             <td>${lng}</td>
             <td>${statusBadge}</td>
             <td>
-                <button class="btn btn-sm btn-success" onclick="window.open('/map.php?focus_type=server&focus_id=${item.id}', '_blank')" title="View on Map">
+                <button class="btn btn-sm btn-success" onclick="window.open('/map.php?focus_type=server&focus_id=${parseInt(item.id, 10) || 0}', '_blank')" title="View on Map">
                     <i class="bi bi-map"></i>
                 </button>
             </td>

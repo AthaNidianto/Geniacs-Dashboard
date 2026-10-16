@@ -1,5 +1,10 @@
 #!/usr/bin/env php
 <?php
+// Hanya boleh dijalankan dari CLI (cron) atau dari server ini sendiri, jangan bisa dipicu dari internet.
+if (PHP_SAPI !== 'cli' && !in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true)) {
+    http_response_code(404);
+    exit;
+}
 /**
  * Telegram Webhook Monitor
  * Checks webhook status every 5 minutes and auto-resets if empty
@@ -46,13 +51,21 @@ $webhookUrl = $data['result']['url'] ?? '';
 // Get expected webhook URL from APP_URL constant
 $expectedUrl = APP_URL . "/webhook/telegram.php";
 
+// Daftarkan ulang webhook dengan secret_token (selalu, idempoten) supaya request palsu ke webhook bisa ditolak.
+$secret = telegramWebhookSecret($botToken);
+$secretUrl = "https://api.telegram.org/bot{$botToken}/setWebhook?url=" . urlencode($expectedUrl) . "&secret_token=" . $secret;
+$secretResp = json_decode(@file_get_contents($secretUrl), true);
+if (!$secretResp || empty($secretResp['ok'])) {
+    error_log("[Webhook Monitor] Gagal mendaftarkan secret_token webhook");
+}
+
 // Check if webhook URL is empty or incorrect
 if (empty($webhookUrl) || $webhookUrl !== $expectedUrl) {
     error_log("[Webhook Monitor] Webhook URL is empty or incorrect. Resetting...");
     error_log("[Webhook Monitor] Current: '{$webhookUrl}' | Expected: '{$expectedUrl}'");
 
     // Reset webhook
-    $setUrl = "https://api.telegram.org/bot{$botToken}/setWebhook?url=" . urlencode($expectedUrl);
+    $setUrl = "https://api.telegram.org/bot{$botToken}/setWebhook?url=" . urlencode($expectedUrl) . "&secret_token=" . $secret;
     $setResponse = file_get_contents($setUrl);
     $setData = json_decode($setResponse, true);
 

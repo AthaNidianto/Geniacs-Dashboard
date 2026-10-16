@@ -24,6 +24,14 @@ if (!$telegramConfig) {
     exit;
 }
 
+// Pastikan request benar-benar dari Telegram (header secret dicocokkan). Tanpa ini siapa pun bisa
+// memalsukan update dengan chat_id admin dan menjalankan perintah bot.
+$sentSecret = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
+if (!hash_equals(telegramWebhookSecret($telegramConfig['bot_token']), (string)$sentSecret)) {
+    http_response_code(403);
+    exit;
+}
+
 $telegram = new TelegramBot($telegramConfig['bot_token'], $telegramConfig['chat_id']);
 
 // Initialize Permission Manager

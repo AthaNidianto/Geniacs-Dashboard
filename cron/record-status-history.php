@@ -1,5 +1,10 @@
 #!/usr/bin/env php
 <?php
+// Hanya boleh dijalankan dari CLI (cron) atau dari server ini sendiri, jangan bisa dipicu dari internet.
+if (PHP_SAPI !== 'cli' && !in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true)) {
+    http_response_code(404);
+    exit;
+}
 // Catat snapshot jumlah CPE online/offline untuk grafik riwayat di dashboard.
 //
 // Jalankan tiap 5 menit lewat crontab (ganti path sesuai server):

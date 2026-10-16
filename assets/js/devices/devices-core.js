@@ -247,7 +247,7 @@ async function renderDevices(devices) {
             } else {
                 rxBadgeClass = 'bg-danger'; // Red: Weak signal (below -23 dBm)
             }
-            rxDisplay = `<span class="badge ${rxBadgeClass}">${device.rx_power} dBm</span>`;
+            rxDisplay = `<span class="badge ${rxBadgeClass}">${escapeHtml(device.rx_power)} dBm</span>`;
         } else {
             rxDisplay = `<span class="badge ${rxBadgeClass}">N/A</span>`;
         }
@@ -287,7 +287,7 @@ async function renderDevices(devices) {
         let tagsDisplay = '';
         let tagsSortValue = '';
         if (device.tags && Array.isArray(device.tags) && device.tags.length > 0) {
-            tagsDisplay = device.tags.map(tag => `<span class="badge bg-info me-1">${tag}</span>`).join('');
+            tagsDisplay = device.tags.map(tag => `<span class="badge bg-info me-1">${escapeHtml(tag)}</span>`).join('');
             tagsSortValue = device.tags.join(', '); // For sorting: join tags as string
         } else {
             tagsDisplay = '<span class="text-muted">-</span>';
@@ -301,20 +301,20 @@ async function renderDevices(devices) {
             <td>
                 <input type="checkbox" class="device-checkbox" value="${encodeURIComponent(device.device_id)}" onchange="updateBulkActionButtons()">
             </td>
-            <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${device.serial_number}</a></td>
-            <td>${device.mac_address}</td>
-            <td data-sort-value="${device.product_class || ''}">${device.product_class || 'N/A'}</td>
+            <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${escapeHtml(device.serial_number)}</a></td>
+            <td>${escapeHtml(device.mac_address)}</td>
+            <td data-sort-value="${escapeHtml(device.product_class || '')}">${escapeHtml(device.product_class || 'N/A')}</td>
             <td data-sort-value="${ipAddress}">${ipDisplay}</td>
-            <td data-sort-value="${device.wifi_ssid}">${device.wifi_ssid}</td>
-            <td data-sort-value="${device.pppoe_username || ''}">${device.pppoe_username || 'N/A'}</td>
+            <td data-sort-value="${escapeHtml(device.wifi_ssid)}">${escapeHtml(device.wifi_ssid)}</td>
+            <td data-sort-value="${escapeHtml(device.pppoe_username || '')}">${escapeHtml(device.pppoe_username || 'N/A')}</td>
             <td data-sort-value="${parseFloat(device.rx_power) || -999}">${rxDisplay}</td>
-            <td data-sort-value="${parseFloat(device.temperature) || -999}">${device.temperature}°C</td>
+            <td data-sort-value="${parseFloat(device.temperature) || -999}">${escapeHtml(device.temperature)}°C</td>
             <td data-sort-value="${clientsCount}" class="text-center">${clientsBadge}</td>
-            <td data-sort-value="${device.status}">${statusDisplay}</td>
-            <td class="tags-column" data-sort-value="${tagsSortValue}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
+            <td data-sort-value="${escapeHtml(device.status)}">${statusDisplay}</td>
+            <td class="tags-column" data-sort-value="${escapeHtml(tagsSortValue)}" style="display: ${tagsColumnDisplay};">${tagsDisplay}</td>
             <td>
                 ${mapButton}
-                <button class="btn btn-sm btn-primary" onclick="summonDeviceQuick('${device.device_id}')" title="Summon Device">
+                <button class="btn btn-sm btn-primary" data-id="${escapeHtml(device.device_id)}" onclick="summonDeviceQuick(this.dataset.id)" title="Summon Device">
                     <i class="bi bi-lightning-charge"></i>
                 </button>
             </td>

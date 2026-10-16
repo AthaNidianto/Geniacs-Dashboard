@@ -200,6 +200,28 @@ class AuditLog
         }
     }
 
+    /**
+     * Jumlah login gagal dari satu IP dalam N menit terakhir (dasar pembatasan brute force).
+     * Memakai tabel audit_logs, jadi tidak perlu tabel baru.
+     */
+    public static function recentFailedLogins(string $ip, int $minutes = 15): int
+    {
+        try {
+            $conn = getDBConnection();
+            self::ensureTable($conn);
+            $minutes = max(1, $minutes);
+            $stmt = $conn->prepare("SELECT COUNT(*) c FROM audit_logs WHERE action = 'Login gagal' AND ip = ? AND created_at > (NOW() - INTERVAL {$minutes} MINUTE)");
+            $stmt->bind_param('s', $ip);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            return (int)($row['c'] ?? 0);
+        } catch (\Throwable $e) {
+            error_log('AuditLog recentFailedLogins: ' . $e->getMessage());
+            return 0; // kalau gagal membaca, jangan mengunci user yang sah
+        }
+    }
+
     public static function prune(int $days = 180, $conn = null): void
     {
         try {

@@ -255,3 +255,47 @@ function getMACVendor($macAddress, $fallbackName = 'Unknown Device') {
 
     return $fallbackName;
 }
+
+// ---------------------------------------------------------------------------
+// KEAMANAN: proteksi CSRF dan secret webhook Telegram
+// ---------------------------------------------------------------------------
+
+// Tolak request yang mengubah data (POST/PUT/DELETE) kalau berasal dari website lain.
+// Browser selalu mengirim header Origin pada POST lintas-situs, jadi form palsu di situs lain bisa dikenali.
+// Klien non-browser (curl, cron, webhook Telegram) tidak mengirim Origin/Referer, jadi tidak terpengaruh.
+function enforceSameOrigin() {
+    if (PHP_SAPI === 'cli') {
+        return;
+    }
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+        return;
+    }
+    $src = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if ($src === '') {
+        $src = $_SERVER['HTTP_REFERER'] ?? '';
+        if ($src === '') {
+            return;
+        }
+    }
+    $srcHost = strtolower((string)(parse_url($src, PHP_URL_HOST) ?? ''));
+    $myHost = strtolower((string)(parse_url('//' . ($_SERVER['HTTP_HOST'] ?? ''), PHP_URL_HOST) ?? ''));
+    if ($srcHost !== '' && $srcHost === $myHost) {
+        return;
+    }
+    http_response_code(403);
+    $isApi = strpos($_SERVER['SCRIPT_NAME'] ?? '', '/api/') === 0;
+    if ($isApi) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Request ditolak (asal tidak cocok)']);
+    } else {
+        echo 'Request ditolak';
+    }
+    exit;
+}
+
+// Secret untuk memverifikasi bahwa request ke webhook benar-benar dari Telegram.
+// Diturunkan dari bot token (tidak perlu disimpan), didaftarkan lewat setWebhook?secret_token=...
+function telegramWebhookSecret($botToken) {
+    return hash_hmac('sha256', (string)$botToken, 'gacs-telegram-webhook');
+}

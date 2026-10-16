@@ -124,28 +124,28 @@ async function loadDeviceDetail(isAutoRefresh = false) {
                 <div class="col-md-6">
                     <h6><i class="bi bi-info-circle"></i> Basic Information</h6>
                     <table class="table table-sm table-bordered">
-                        <tr><th width="40%">Device ID</th><td>${device.device_id}</td></tr>
-                        <tr><th>Serial Number</th><td>${device.serial_number}</td></tr>
-                        <tr><th>MAC Address</th><td>${device.mac_address}</td></tr>
-                        <tr><th>Last Inform</th><td>${device.last_inform}</td></tr>
-                        <tr><th>Status</th><td><span class="badge ${device.status === 'online' ? 'online' : 'offline'}">${device.status}</span></td></tr>
-                        <tr><th>Manufacturer</th><td>${device.manufacturer}</td></tr>
-                        <tr><th>Product Class</th><td>${device.product_class}</td></tr>
-                        <tr><th>OUI</th><td>${device.oui}</td></tr>
+                        <tr><th width="40%">Device ID</th><td>${escapeHtml(device.device_id)}</td></tr>
+                        <tr><th>Serial Number</th><td>${escapeHtml(device.serial_number)}</td></tr>
+                        <tr><th>MAC Address</th><td>${escapeHtml(device.mac_address)}</td></tr>
+                        <tr><th>Last Inform</th><td>${escapeHtml(device.last_inform)}</td></tr>
+                        <tr><th>Status</th><td><span class="badge ${device.status === 'online' ? 'online' : 'offline'}">${escapeHtml(device.status)}</span></td></tr>
+                        <tr><th>Manufacturer</th><td>${escapeHtml(device.manufacturer)}</td></tr>
+                        <tr><th>Product Class</th><td>${escapeHtml(device.product_class)}</td></tr>
+                        <tr><th>OUI</th><td>${escapeHtml(device.oui)}</td></tr>
                     </table>
                 </div>
                 <div class="col-md-6">
                     <h6><i class="bi bi-cpu"></i> Hardware/Software</h6>
                     <table class="table table-sm table-bordered">
-                        <tr><th width="40%">Hardware Version</th><td>${device.hardware_version}</td></tr>
-                        <tr><th>Software Version</th><td>${device.software_version}</td></tr>
+                        <tr><th width="40%">Hardware Version</th><td>${escapeHtml(device.hardware_version)}</td></tr>
+                        <tr><th>Software Version</th><td>${escapeHtml(device.software_version)}</td></tr>
                         <tr><th>Uptime</th><td>${formatUptime(device.uptime)}</td></tr>
                     </table>
 
                     <h6 class="mt-4"><i class="bi bi-broadcast"></i> Optical Information</h6>
                     <table class="table table-sm table-bordered">
-                        <tr><th width="40%">Rx Power</th><td>${device.rx_power} dBm</td></tr>
-                        <tr><th>Temperature</th><td>${device.temperature}°C</td></tr>
+                        <tr><th width="40%">Rx Power</th><td>${escapeHtml(device.rx_power)} dBm</td></tr>
+                        <tr><th>Temperature</th><td>${escapeHtml(device.temperature)}°C</td></tr>
                     </table>
                 </div>
             </div>
@@ -160,7 +160,7 @@ async function loadDeviceDetail(isAutoRefresh = false) {
                         ${renderWifiRows(device)}
                         <tr>
                             <th>Full TR069 URL</th>
-                            <td><small>${device.ip_tr069}</small></td>
+                            <td><small>${escapeHtml(device.ip_tr069)}</small></td>
                         </tr>
                     </table>
 
@@ -177,14 +177,14 @@ async function loadDeviceDetail(isAutoRefresh = false) {
                         <tr>
                             <th width="20%">Super Admin User</th>
                             <td>
-                                <code>${device.admin_user || 'N/A'}</code>
+                                <code>${escapeHtml(device.admin_user || 'N/A')}</code>
                             </td>
                         </tr>
                         <tr>
                             <th>Super Admin Password</th>
                             <td>
                                 <span id="admin-pass-hidden">********</span>
-                                <span id="admin-pass-shown" style="display:none;"><code>${device.admin_password || 'N/A'}</code></span>
+                                <span id="admin-pass-shown" style="display:none;"><code>${escapeHtml(device.admin_password || 'N/A')}</code></span>
                                 <button class="btn btn-sm btn-link" onclick="toggleAdminPassword()">
                                     <i id="admin-toggle-icon" class="bi bi-eye"></i>
                                 </button>
@@ -194,7 +194,7 @@ async function loadDeviceDetail(isAutoRefresh = false) {
                             <th>Telecom Password</th>
                             <td>
                                 <span id="telecom-pass-hidden">********</span>
-                                <span id="telecom-pass-shown" style="display:none;"><code>${device.telecom_password || 'N/A'}</code></span>
+                                <span id="telecom-pass-shown" style="display:none;"><code>${escapeHtml(device.telecom_password || 'N/A')}</code></span>
                                 <button class="btn btn-sm btn-link" onclick="toggleTelecomPassword()">
                                     <i id="telecom-toggle-icon" class="bi bi-eye"></i>
                                 </button>
@@ -304,13 +304,13 @@ function extractIP(ipString) {
 
 function makeIPClickable(ip) {
     if (!ip || ip === 'N/A' || ip === '0.0.0.0') {
-        return ip;
+        return escapeHtml(ip);
     }
 
     // Check if it's a valid IP address
     const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
     if (!ipRegex.test(ip)) {
-        return ip;
+        return escapeHtml(ip);
     }
 
     return `<a href="http://${ip}" target="_blank" rel="noopener noreferrer" title="Open http://${ip}">${ip}</a>`;
@@ -338,19 +338,19 @@ function renderTopologyLocationTab(locationResult) {
     // Build hierarchy path
     let pathParts = [];
     if (loc.server && loc.server.name) {
-        pathParts.push(`<span class="badge bg-secondary">${loc.server.name}</span>`);
+        pathParts.push(`<span class="badge bg-secondary">${escapeHtml(loc.server.name)}</span>`);
     }
     if (loc.olt && loc.olt.name) {
-        pathParts.push(`<span class="badge bg-info">${loc.olt.name}</span>`);
+        pathParts.push(`<span class="badge bg-info">${escapeHtml(loc.olt.name)}</span>`);
     }
     if (loc.odc && loc.odc.name) {
-        pathParts.push(`<span class="badge bg-warning text-dark">${loc.odc.name}</span>`);
+        pathParts.push(`<span class="badge bg-warning text-dark">${escapeHtml(loc.odc.name)}</span>`);
     }
     if (loc.odp && loc.odp.name) {
-        pathParts.push(`<span class="badge bg-success">${loc.odp.name}</span>`);
+        pathParts.push(`<span class="badge bg-success">${escapeHtml(loc.odp.name)}</span>`);
     }
     if (loc.onu && loc.onu.name) {
-        pathParts.push(`<span class="badge bg-primary">${loc.onu.name}</span>`);
+        pathParts.push(`<span class="badge bg-primary">${escapeHtml(loc.onu.name)}</span>`);
     }
 
     if (pathParts.length > 0) {
@@ -368,8 +368,8 @@ function renderTopologyLocationTab(locationResult) {
             <tr>
                 <th width="30%"><i class="bi bi-box"></i> ODP</th>
                 <td>
-                    <strong>${loc.odp.name}</strong>
-                    <a href="/map.php?focus_type=odp&focus_id=${loc.odp.id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
+                    <strong>${escapeHtml(loc.odp.name)}</strong>
+                    <a href="/map.php?focus_type=odp&focus_id=${escapeHtml(loc.odp.id)}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
                         <i class="bi bi-map"></i> View on Map
                     </a>
                 </td>
@@ -382,7 +382,7 @@ function renderTopologyLocationTab(locationResult) {
         html += `
             <tr>
                 <th><i class="bi bi-plug"></i> Port Number</th>
-                <td><span class="badge bg-info">Port ${loc.onu.port}</span></td>
+                <td><span class="badge bg-info">Port ${escapeHtml(loc.onu.port)}</span></td>
             </tr>
         `;
     }
@@ -393,8 +393,8 @@ function renderTopologyLocationTab(locationResult) {
             <tr>
                 <th><i class="bi bi-building"></i> ODC</th>
                 <td>
-                    <strong>${loc.odc.name}</strong>
-                    <a href="/map.php?focus_type=odc&focus_id=${loc.odc.id}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
+                    <strong>${escapeHtml(loc.odc.name)}</strong>
+                    <a href="/map.php?focus_type=odc&focus_id=${escapeHtml(loc.odc.id)}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
                         <i class="bi bi-map"></i> View on Map
                     </a>
                 </td>
@@ -407,7 +407,7 @@ function renderTopologyLocationTab(locationResult) {
         html += `
             <tr>
                 <th><i class="bi bi-hdd-network"></i> OLT</th>
-                <td><strong>${loc.olt.name}</strong></td>
+                <td><strong>${escapeHtml(loc.olt.name)}</strong></td>
             </tr>
         `;
     }
@@ -429,7 +429,7 @@ function renderTopologyLocationTab(locationResult) {
                         <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
                             <i class="bi bi-globe"></i> View on Google Maps
                         </a>
-                        <a href="/map.php?focus_type=onu&focus_id=${loc.onu.id}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
+                        <a href="/map.php?focus_type=onu&focus_id=${escapeHtml(loc.onu.id)}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
                             <i class="bi bi-map"></i> View on Network Map
                         </a>
                     </td>
@@ -468,19 +468,19 @@ function renderTopologyLocation(locationResult) {
     // Build hierarchy path
     let pathParts = [];
     if (loc.server && loc.server.name) {
-        pathParts.push(`<span class="badge bg-secondary">${loc.server.name}</span>`);
+        pathParts.push(`<span class="badge bg-secondary">${escapeHtml(loc.server.name)}</span>`);
     }
     if (loc.olt && loc.olt.name) {
-        pathParts.push(`<span class="badge bg-info">${loc.olt.name}</span>`);
+        pathParts.push(`<span class="badge bg-info">${escapeHtml(loc.olt.name)}</span>`);
     }
     if (loc.odc && loc.odc.name) {
-        pathParts.push(`<span class="badge bg-warning text-dark">${loc.odc.name}</span>`);
+        pathParts.push(`<span class="badge bg-warning text-dark">${escapeHtml(loc.odc.name)}</span>`);
     }
     if (loc.odp && loc.odp.name) {
-        pathParts.push(`<span class="badge bg-success">${loc.odp.name}</span>`);
+        pathParts.push(`<span class="badge bg-success">${escapeHtml(loc.odp.name)}</span>`);
     }
     if (loc.onu && loc.onu.name) {
-        pathParts.push(`<span class="badge bg-primary">${loc.onu.name}</span>`);
+        pathParts.push(`<span class="badge bg-primary">${escapeHtml(loc.onu.name)}</span>`);
     }
 
     if (pathParts.length > 0) {
@@ -498,8 +498,8 @@ function renderTopologyLocation(locationResult) {
             <tr>
                 <th width="30%"><i class="bi bi-box"></i> ODP</th>
                 <td>
-                    <strong>${loc.odp.name}</strong>
-                    <a href="/map.php?focus_type=odp&focus_id=${loc.odp.id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
+                    <strong>${escapeHtml(loc.odp.name)}</strong>
+                    <a href="/map.php?focus_type=odp&focus_id=${escapeHtml(loc.odp.id)}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
                         <i class="bi bi-map"></i> View on Map
                     </a>
                 </td>
@@ -512,7 +512,7 @@ function renderTopologyLocation(locationResult) {
         html += `
             <tr>
                 <th><i class="bi bi-plug"></i> Port Number</th>
-                <td><span class="badge bg-info">Port ${loc.onu.port}</span></td>
+                <td><span class="badge bg-info">Port ${escapeHtml(loc.onu.port)}</span></td>
             </tr>
         `;
     }
@@ -523,8 +523,8 @@ function renderTopologyLocation(locationResult) {
             <tr>
                 <th><i class="bi bi-building"></i> ODC</th>
                 <td>
-                    <strong>${loc.odc.name}</strong>
-                    <a href="/map.php?focus_type=odc&focus_id=${loc.odc.id}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
+                    <strong>${escapeHtml(loc.odc.name)}</strong>
+                    <a href="/map.php?focus_type=odc&focus_id=${escapeHtml(loc.odc.id)}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
                         <i class="bi bi-map"></i> View on Map
                     </a>
                 </td>
@@ -537,7 +537,7 @@ function renderTopologyLocation(locationResult) {
         html += `
             <tr>
                 <th><i class="bi bi-hdd-network"></i> OLT</th>
-                <td><strong>${loc.olt.name}</strong></td>
+                <td><strong>${escapeHtml(loc.olt.name)}</strong></td>
             </tr>
         `;
     }
@@ -559,7 +559,7 @@ function renderTopologyLocation(locationResult) {
                         <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
                             <i class="bi bi-globe"></i> View on Google Maps
                         </a>
-                        <a href="/map.php?focus_type=onu&focus_id=${loc.onu.id}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
+                        <a href="/map.php?focus_type=onu&focus_id=${escapeHtml(loc.onu.id)}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
                             <i class="bi bi-map"></i> View on Network Map
                         </a>
                     </td>
@@ -620,17 +620,17 @@ function renderWANDetailsTab(wanDetails) {
                 <div class="card-header bg-light">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <strong>${wan.name}</strong>
-                            <span class="badge bg-info ms-2">${wan.type}</span>
+                            <strong>${escapeHtml(wan.name)}</strong>
+                            <span class="badge bg-info ms-2">${escapeHtml(wan.type)}</span>
                             ${statusBadge}
                             ${isBridge ? '<span class="badge bg-secondary ms-2">Bridge Mode</span>' : ''}
                             ${isTR069 ? '<span class="badge bg-danger ms-2"><i class="bi bi-exclamation-triangle"></i> TR069</span>' : ''}
                         </div>
                         <div>
-                            <button class="btn btn-sm btn-warning" onclick='openEditWANModal(${JSON.stringify(wan)})'>
+                            <button class="btn btn-sm btn-warning" onclick='openEditWANModal(${escapeAttrJson(wan)})'>
                                 <i class="bi bi-pencil"></i> Edit
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick='openDeleteWANModal(${JSON.stringify(wan)})'>
+                            <button class="btn btn-sm btn-danger" onclick='openDeleteWANModal(${escapeAttrJson(wan)})'>
                                 <i class="bi bi-trash"></i> Delete
                             </button>
                         </div>
@@ -644,14 +644,14 @@ function renderWANDetailsTab(wanDetails) {
                     <table class="table table-sm table-bordered mb-0">
                         <tr>
                             <th width="30%">Connection Type</th>
-                            <td>${wan.connection_type}</td>
+                            <td>${escapeHtml(wan.connection_type)}</td>
                         </tr>`;
 
             if (vlanId) {
                 html += `
                         <tr>
                             <th>VLAN ID</th>
-                            <td>${vlanId}</td>
+                            <td>${escapeHtml(vlanId)}</td>
                         </tr>`;
             }
 
@@ -659,7 +659,7 @@ function renderWANDetailsTab(wanDetails) {
                 html += `
                         <tr>
                             <th>Bound to</th>
-                            <td><span class="badge bg-primary">${wan.binding}</span></td>
+                            <td><span class="badge bg-primary">${escapeHtml(wan.binding)}</span></td>
                         </tr>`;
             }
 
@@ -670,14 +670,14 @@ function renderWANDetailsTab(wanDetails) {
                     <table class="table table-sm table-bordered mb-0">
                         <tr>
                             <th width="30%">Connection Type</th>
-                            <td>${wan.connection_type}</td>
+                            <td>${escapeHtml(wan.connection_type)}</td>
                         </tr>`;
 
             if (vlanId) {
                 html += `
                         <tr>
                             <th>VLAN ID</th>
-                            <td>${vlanId}</td>
+                            <td>${escapeHtml(vlanId)}</td>
                         </tr>`;
             }
 
@@ -685,7 +685,7 @@ function renderWANDetailsTab(wanDetails) {
                 html += `
                         <tr>
                             <th>Bound to</th>
-                            <td><span class="badge bg-primary">${wan.binding}</span></td>
+                            <td><span class="badge bg-primary">${escapeHtml(wan.binding)}</span></td>
                         </tr>`;
             }
 
@@ -709,7 +709,7 @@ function renderWANDetailsTab(wanDetails) {
                 html += `
                         <tr>
                             <th>Subnet Mask</th>
-                            <td>${wan.subnet_mask}</td>
+                            <td>${escapeHtml(wan.subnet_mask)}</td>
                         </tr>`;
             }
 
@@ -717,7 +717,7 @@ function renderWANDetailsTab(wanDetails) {
                 html += `
                         <tr>
                             <th>DNS Servers</th>
-                            <td>${wan.dns_servers}</td>
+                            <td>${escapeHtml(wan.dns_servers)}</td>
                         </tr>`;
             }
 
@@ -725,7 +725,7 @@ function renderWANDetailsTab(wanDetails) {
                 html += `
                         <tr>
                             <th>MAC Address</th>
-                            <td>${wan.mac_address}</td>
+                            <td>${escapeHtml(wan.mac_address)}</td>
                         </tr>`;
             }
 
@@ -734,7 +734,7 @@ function renderWANDetailsTab(wanDetails) {
                     html += `
                         <tr>
                             <th>Username</th>
-                            <td>${wan.username}</td>
+                            <td>${escapeHtml(wan.username)}</td>
                         </tr>`;
                 }
 
@@ -742,7 +742,7 @@ function renderWANDetailsTab(wanDetails) {
                     html += `
                         <tr>
                             <th>Last Error</th>
-                            <td>${wan.last_error}</td>
+                            <td>${escapeHtml(wan.last_error)}</td>
                         </tr>`;
                 }
 
@@ -750,7 +750,7 @@ function renderWANDetailsTab(wanDetails) {
                     html += `
                         <tr>
                             <th>MRU Size</th>
-                            <td>${wan.mru_size}</td>
+                            <td>${escapeHtml(wan.mru_size)}</td>
                         </tr>`;
                 }
             }
@@ -760,7 +760,7 @@ function renderWANDetailsTab(wanDetails) {
                     html += `
                         <tr>
                             <th>Addressing Type</th>
-                            <td>${wan.addressing_type}</td>
+                            <td>${escapeHtml(wan.addressing_type)}</td>
                         </tr>`;
                 }
             }
@@ -821,17 +821,17 @@ function renderWANDetails(wanDetails) {
                 <div class="card-header bg-light">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <strong>${wan.name}</strong>
-                            <span class="badge bg-info ms-2">${wan.type}</span>
+                            <strong>${escapeHtml(wan.name)}</strong>
+                            <span class="badge bg-info ms-2">${escapeHtml(wan.type)}</span>
                             ${statusBadge}
                             ${isBridge ? '<span class="badge bg-secondary ms-2">Bridge Mode</span>' : ''}
                             ${isTR069 ? '<span class="badge bg-danger ms-2"><i class="bi bi-exclamation-triangle"></i> TR069</span>' : ''}
                         </div>
                         <div>
-                            <button class="btn btn-sm btn-warning" onclick='openEditWANModal(${JSON.stringify(wan)})'>
+                            <button class="btn btn-sm btn-warning" onclick='openEditWANModal(${escapeAttrJson(wan)})'>
                                 <i class="bi bi-pencil"></i> Edit
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick='openDeleteWANModal(${JSON.stringify(wan)})'>
+                            <button class="btn btn-sm btn-danger" onclick='openDeleteWANModal(${escapeAttrJson(wan)})'>
                                 <i class="bi bi-trash"></i> Delete
                             </button>
                         </div>
@@ -845,14 +845,14 @@ function renderWANDetails(wanDetails) {
                     <table class="table table-sm table-bordered mb-0">
                         <tr>
                             <th width="30%">Connection Type</th>
-                            <td>${wan.connection_type}</td>
+                            <td>${escapeHtml(wan.connection_type)}</td>
                         </tr>`;
 
             if (vlanId) {
                 html += `
                         <tr>
                             <th>VLAN ID</th>
-                            <td>${vlanId}</td>
+                            <td>${escapeHtml(vlanId)}</td>
                         </tr>`;
             }
 
@@ -860,7 +860,7 @@ function renderWANDetails(wanDetails) {
                 html += `
                         <tr>
                             <th>Bound to</th>
-                            <td><span class="badge bg-primary">${wan.binding}</span></td>
+                            <td><span class="badge bg-primary">${escapeHtml(wan.binding)}</span></td>
                         </tr>`;
             }
 
@@ -872,14 +872,14 @@ function renderWANDetails(wanDetails) {
                     <table class="table table-sm table-bordered mb-0">
                         <tr>
                             <th width="30%">Connection Type</th>
-                            <td>${wan.connection_type}</td>
+                            <td>${escapeHtml(wan.connection_type)}</td>
                         </tr>`;
 
             if (vlanId) {
                 html += `
                         <tr>
                             <th>VLAN ID</th>
-                            <td>${vlanId}</td>
+                            <td>${escapeHtml(vlanId)}</td>
                         </tr>`;
             }
 
@@ -887,7 +887,7 @@ function renderWANDetails(wanDetails) {
                 html += `
                         <tr>
                             <th>Bound to</th>
-                            <td><span class="badge bg-primary">${wan.binding}</span></td>
+                            <td><span class="badge bg-primary">${escapeHtml(wan.binding)}</span></td>
                         </tr>`;
             }
 
@@ -914,7 +914,7 @@ function renderWANDetails(wanDetails) {
                 html += `
                         <tr>
                             <th>Subnet Mask</th>
-                            <td>${wan.subnet_mask}</td>
+                            <td>${escapeHtml(wan.subnet_mask)}</td>
                         </tr>`;
             }
 
@@ -923,7 +923,7 @@ function renderWANDetails(wanDetails) {
                 html += `
                         <tr>
                             <th>DNS Servers</th>
-                            <td>${wan.dns_servers}</td>
+                            <td>${escapeHtml(wan.dns_servers)}</td>
                         </tr>`;
             }
 
@@ -932,7 +932,7 @@ function renderWANDetails(wanDetails) {
                 html += `
                         <tr>
                             <th>MAC Address</th>
-                            <td>${wan.mac_address}</td>
+                            <td>${escapeHtml(wan.mac_address)}</td>
                         </tr>`;
             }
 
@@ -942,7 +942,7 @@ function renderWANDetails(wanDetails) {
                     html += `
                         <tr>
                             <th>Username</th>
-                            <td>${wan.username}</td>
+                            <td>${escapeHtml(wan.username)}</td>
                         </tr>`;
                 }
 
@@ -950,7 +950,7 @@ function renderWANDetails(wanDetails) {
                     html += `
                         <tr>
                             <th>Last Error</th>
-                            <td>${wan.last_error}</td>
+                            <td>${escapeHtml(wan.last_error)}</td>
                         </tr>`;
                 }
 
@@ -958,7 +958,7 @@ function renderWANDetails(wanDetails) {
                     html += `
                         <tr>
                             <th>MRU Size</th>
-                            <td>${wan.mru_size}</td>
+                            <td>${escapeHtml(wan.mru_size)}</td>
                         </tr>`;
                 }
             }
@@ -969,7 +969,7 @@ function renderWANDetails(wanDetails) {
                     html += `
                         <tr>
                             <th>Addressing Type</th>
-                            <td>${wan.addressing_type}</td>
+                            <td>${escapeHtml(wan.addressing_type)}</td>
                         </tr>`;
                 }
             }
@@ -1004,7 +1004,7 @@ function renderDHCPServerTab(dhcpServer) {
 
     let html = '<div class="d-flex justify-content-between align-items-center mb-3">';
     html += '<h6><i class="bi bi-router"></i> DHCP Server Configuration</h6>';
-    html += `<button class="btn btn-sm btn-primary" onclick='openEditDHCPModal(${JSON.stringify(dhcpServer)})'><i class="bi bi-pencil"></i> Edit DHCP</button>`;
+    html += `<button class="btn btn-sm btn-primary" onclick='openEditDHCPModal(${escapeAttrJson(dhcpServer)})'><i class="bi bi-pencil"></i> Edit DHCP</button>`;
     html += '</div>';
 
     const dhcpEnabled = dhcpServer.enabled === true || dhcpServer.enabled === 'true';
@@ -1029,15 +1029,15 @@ function renderDHCPServerTab(dhcpServer) {
         html += `
                     <tr>
                         <th>IP Address Pool Start</th>
-                        <td>${dhcpServer.min_address}</td>
+                        <td>${escapeHtml(dhcpServer.min_address)}</td>
                     </tr>
                     <tr>
                         <th>IP Address Pool End</th>
-                        <td>${dhcpServer.max_address || 'N/A'}</td>
+                        <td>${escapeHtml(dhcpServer.max_address || 'N/A')}</td>
                     </tr>
                     <tr>
                         <th>Subnet Mask</th>
-                        <td>${dhcpServer.subnet_mask || 'N/A'}</td>
+                        <td>${escapeHtml(dhcpServer.subnet_mask || 'N/A')}</td>
                     </tr>
                     <tr>
                         <th>Default Gateway</th>
@@ -1045,7 +1045,7 @@ function renderDHCPServerTab(dhcpServer) {
                     </tr>
                     <tr>
                         <th>DNS Servers</th>
-                        <td>${dhcpServer.dns_servers || 'N/A'}</td>
+                        <td>${escapeHtml(dhcpServer.dns_servers || 'N/A')}</td>
                     </tr>
                     <tr>
                         <th>Lease Time</th>
@@ -1070,7 +1070,7 @@ function renderDHCPServer(dhcpServer) {
     let html = '<div class="row mt-3"><div class="col-md-12">';
     html += '<div class="d-flex justify-content-between align-items-center mb-2">';
     html += '<h6><i class="bi bi-router"></i> DHCP Server Configuration</h6>';
-    html += `<button class="btn btn-sm btn-primary" onclick='openEditDHCPModal(${JSON.stringify(dhcpServer)})'><i class="bi bi-pencil"></i> Edit DHCP</button>`;
+    html += `<button class="btn btn-sm btn-primary" onclick='openEditDHCPModal(${escapeAttrJson(dhcpServer)})'><i class="bi bi-pencil"></i> Edit DHCP</button>`;
     html += '</div>';
 
     const dhcpEnabled = dhcpServer.enabled === true || dhcpServer.enabled === 'true';
@@ -1095,15 +1095,15 @@ function renderDHCPServer(dhcpServer) {
         html += `
                     <tr>
                         <th>IP Address Pool Start</th>
-                        <td>${dhcpServer.min_address}</td>
+                        <td>${escapeHtml(dhcpServer.min_address)}</td>
                     </tr>
                     <tr>
                         <th>IP Address Pool End</th>
-                        <td>${dhcpServer.max_address || 'N/A'}</td>
+                        <td>${escapeHtml(dhcpServer.max_address || 'N/A')}</td>
                     </tr>
                     <tr>
                         <th>Subnet Mask</th>
-                        <td>${dhcpServer.subnet_mask || 'N/A'}</td>
+                        <td>${escapeHtml(dhcpServer.subnet_mask || 'N/A')}</td>
                     </tr>
                     <tr>
                         <th>Default Gateway</th>
@@ -1111,7 +1111,7 @@ function renderDHCPServer(dhcpServer) {
                     </tr>
                     <tr>
                         <th>DNS Servers</th>
-                        <td>${dhcpServer.dns_servers || 'N/A'}</td>
+                        <td>${escapeHtml(dhcpServer.dns_servers || 'N/A')}</td>
                     </tr>
                     <tr>
                         <th>Lease Time</th>
@@ -1182,24 +1182,24 @@ function renderConnectedDevicesTab(connectedDevices) {
         const displayName = device.vendor || device.hostname || 'Unknown Device';
 
         html += `
-            <tr data-mac="${device.mac_address}">
+            <tr data-mac="${escapeHtml(device.mac_address)}">
                 <td class="text-center">${index + 1}</td>
                 <td>
-                    <i class="bi bi-pc-display text-primary"></i> <strong>${displayName}</strong>
-                    ${device.hostname && device.vendor && device.hostname !== device.vendor ? `<br><small class="text-muted">Hostname: ${device.hostname}</small>` : ''}
+                    <i class="bi bi-pc-display text-primary"></i> <strong>${escapeHtml(displayName)}</strong>
+                    ${device.hostname && device.vendor && device.hostname !== device.vendor ? `<br><small class="text-muted">Hostname: ${escapeHtml(device.hostname)}</small>` : ''}
                 </td>
                 <td>${makeIPClickable(device.ip_address)}</td>
-                <td><code>${device.mac_address}</code></td>
+                <td><code>${escapeHtml(device.mac_address)}</code></td>
                 <td class="text-center">
                     <span class="badge ${connectionBadge}">
-                        <i class="${connectionIcon}"></i> ${device.interface_type}
+                        <i class="${connectionIcon}"></i> ${escapeHtml(device.interface_type)}
                     </span>
                 </td>
                 <td class="text-center">${statusBadge}</td>
-                <td class="hotspot-user" data-mac="${device.mac_address}">
+                <td class="hotspot-user" data-mac="${escapeHtml(device.mac_address)}">
                     <span class="text-muted">-</span>
                 </td>
-                <td class="hotspot-traffic" data-mac="${device.mac_address}">
+                <td class="hotspot-traffic" data-mac="${escapeHtml(device.mac_address)}">
                     <span class="text-muted">-</span>
                 </td>
             </tr>
@@ -1271,24 +1271,24 @@ function renderConnectedDevices(connectedDevices) {
         const displayName = device.vendor || device.hostname || 'Unknown Device';
 
         html += `
-            <tr data-mac="${device.mac_address}">
+            <tr data-mac="${escapeHtml(device.mac_address)}">
                 <td class="text-center">${index + 1}</td>
                 <td>
-                    <i class="bi bi-pc-display text-primary"></i> <strong>${displayName}</strong>
-                    ${device.hostname && device.vendor && device.hostname !== device.vendor ? `<br><small class="text-muted">Hostname: ${device.hostname}</small>` : ''}
+                    <i class="bi bi-pc-display text-primary"></i> <strong>${escapeHtml(displayName)}</strong>
+                    ${device.hostname && device.vendor && device.hostname !== device.vendor ? `<br><small class="text-muted">Hostname: ${escapeHtml(device.hostname)}</small>` : ''}
                 </td>
                 <td>${makeIPClickable(device.ip_address)}</td>
-                <td><code>${device.mac_address}</code></td>
+                <td><code>${escapeHtml(device.mac_address)}</code></td>
                 <td class="text-center">
                     <span class="badge ${connectionBadge}">
-                        <i class="${connectionIcon}"></i> ${device.interface_type}
+                        <i class="${connectionIcon}"></i> ${escapeHtml(device.interface_type)}
                     </span>
                 </td>
                 <td class="text-center">${statusBadge}</td>
-                <td class="hotspot-user" data-mac="${device.mac_address}">
+                <td class="hotspot-user" data-mac="${escapeHtml(device.mac_address)}">
                     <span class="text-muted">-</span>
                 </td>
-                <td class="hotspot-traffic" data-mac="${device.mac_address}">
+                <td class="hotspot-traffic" data-mac="${escapeHtml(device.mac_address)}">
                     <span class="text-muted">-</span>
                 </td>
             </tr>
@@ -2084,7 +2084,7 @@ async function confirmUpdateDHCP() {
 function updateTagsBadge(tags) {
     const badgeElement = document.getElementById('device-tags-badge');
     if (tags && tags.length > 0) {
-        const tagBadges = tags.map(tag => `<span class="badge bg-info ms-1">${tag}</span>`).join('');
+        const tagBadges = tags.map(tag => `<span class="badge bg-info ms-1">${escapeHtml(tag)}</span>`).join('');
         badgeElement.innerHTML = tagBadges;
     } else {
         badgeElement.innerHTML = '';
@@ -2129,8 +2129,8 @@ function showRemoveTagModal() {
             if (result && result.success && result.device.tags && result.device.tags.length > 0) {
                 const tagsList = document.getElementById('deviceTagsList');
                 tagsList.innerHTML = result.device.tags.map(tag =>
-                    `<button class="btn btn-sm btn-outline-warning me-2 mb-2" onclick="removeTagFromDevice('${tag}')">
-                        <i class="bi bi-x-circle"></i> ${tag}
+                    `<button class="btn btn-sm btn-outline-warning me-2 mb-2" data-tag="${escapeHtml(tag)}" onclick="removeTagFromDevice(this.dataset.tag)">
+                        <i class="bi bi-x-circle"></i> ${escapeHtml(tag)}
                     </button>`
                 ).join('');
 
@@ -2245,7 +2245,7 @@ async function fetchHotspotTraffic() {
             updateHotspotTrafficError(errorMsg);
 
             if (statusEl) {
-                statusEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning"></i> ' + errorMsg;
+                statusEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning"></i> ' + escapeHtml(errorMsg);
             }
         }
     } catch (error) {
@@ -2279,7 +2279,7 @@ function updateHotspotTrafficDisplay(data, timestamp) {
 
         // Update username
         if (userInfo.found) {
-            userCell.innerHTML = `<strong>${userInfo.username}</strong>`;
+            userCell.innerHTML = `<strong>${escapeHtml(userInfo.username)}</strong>`;
 
             // Calculate RX/TX rate from bytes difference
             const currentBytesIn = userInfo.bytes_in || 0;
@@ -2356,7 +2356,7 @@ function updateHotspotTrafficError(message) {
     // Only show error in status indicator, keep existing data in cells (don't overwrite)
     const statusEl = document.getElementById('hotspot-status');
     if (statusEl) {
-        statusEl.innerHTML = `<span class="text-danger">⚠ ${message}</span>`;
+        statusEl.innerHTML = `<span class="text-danger">⚠ ${escapeHtml(message)}</span>`;
     }
 
     // DON'T clear existing data - let users see last known good data
@@ -2536,7 +2536,7 @@ function renderLanPortsTab(ports) {
         const d = describeLanPort(port);
         const statusBadge = d.isUp
             ? '<span class="badge online">Up</span>'
-            : '<span class="badge offline">' + d.badgeText + '</span>';
+            : '<span class="badge offline">' + escHtmlLan(d.badgeText) + '</span>';
         const power = port.enabled
             ? '<span class="badge online">Enable</span>'
             : '<span class="badge offline">Disable</span>';

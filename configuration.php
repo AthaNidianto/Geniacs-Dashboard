@@ -67,7 +67,7 @@ include __DIR__ . '/views/layouts/header.php';
                             <div class="form-group">
                                 <label>Username Baru</label>
                                 <input type="text" name="new_username" class="form-control"
-                                       value="<?php echo $_SESSION['username']; ?>" required>
+                                       value="<?php echo htmlspecialchars((string)($_SESSION['username']), ENT_QUOTES, 'UTF-8'); ?>" required>
                             </div>
                             <div class="form-group">
                                 <label>Password Baru (kosongkan jika tidak ingin mengubah)</label>
@@ -101,25 +101,25 @@ include __DIR__ . '/views/layouts/header.php';
                             <div class="form-group">
                                 <label>Host</label>
                                 <input type="text" name="host" class="form-control"
-                                       value="<?php echo $genieacs['host'] ?? '192.168.1.1'; ?>"
+                                       value="<?php echo htmlspecialchars((string)($genieacs['host'] ?? '192.168.1.1'), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="192.168.1.1" required>
                             </div>
                             <div class="form-group">
                                 <label>Port</label>
                                 <input type="number" name="port" class="form-control"
-                                       value="<?php echo $genieacs['port'] ?? '7557'; ?>"
+                                       value="<?php echo htmlspecialchars((string)($genieacs['port'] ?? '7557'), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="7557" required>
                             </div>
                             <div class="form-group">
                                 <label>Username (opsional)</label>
                                 <input type="text" name="username" class="form-control"
-                                       value="<?php echo $genieacs['username'] ?? ''; ?>"
+                                       value="<?php echo htmlspecialchars((string)($genieacs['username'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="Username">
                             </div>
                             <div class="form-group">
                                 <label>Password (opsional)</label>
                                 <input type="password" name="password" class="form-control"
-                                       value="<?php echo $genieacs['password'] ?? ''; ?>"
+                                       value="<?php echo htmlspecialchars((string)($genieacs['password'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="Password">
                             </div>
                             <button type="submit" class="btn btn-success me-2">
@@ -152,25 +152,25 @@ include __DIR__ . '/views/layouts/header.php';
                             <div class="form-group">
                                 <label>Host</label>
                                 <input type="text" name="host" class="form-control"
-                                       value="<?php echo $mikrotik['host'] ?? ''; ?>"
+                                       value="<?php echo htmlspecialchars((string)($mikrotik['host'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="192.168.1.1" required>
                             </div>
                             <div class="form-group">
                                 <label>Port API</label>
                                 <input type="number" name="port" class="form-control"
-                                       value="<?php echo $mikrotik['port'] ?? '8728'; ?>"
+                                       value="<?php echo htmlspecialchars((string)($mikrotik['port'] ?? '8728'), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="8728" required>
                             </div>
                             <div class="form-group">
                                 <label>Username</label>
                                 <input type="text" name="username" class="form-control"
-                                       value="<?php echo $mikrotik['username'] ?? ''; ?>"
+                                       value="<?php echo htmlspecialchars((string)($mikrotik['username'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="admin" required>
                             </div>
                             <div class="form-group">
                                 <label>Password</label>
                                 <input type="password" name="password" class="form-control"
-                                       value="<?php echo $mikrotik['password'] ?? ''; ?>"
+                                       value="<?php echo htmlspecialchars((string)($mikrotik['password'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="Password" required>
                             </div>
                             <button type="submit" class="btn btn-success me-2">
@@ -203,14 +203,14 @@ include __DIR__ . '/views/layouts/header.php';
                             <div class="form-group">
                                 <label>Bot Token</label>
                                 <input type="text" name="bot_token" class="form-control"
-                                       value="<?php echo $telegram['bot_token'] ?? ''; ?>"
+                                       value="<?php echo htmlspecialchars((string)($telegram['bot_token'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" required>
                                 <small class="text-muted">Dapatkan dari @BotFather</small>
                             </div>
                             <div class="form-group">
                                 <label>Chat ID</label>
                                 <input type="text" name="chat_id" class="form-control"
-                                       value="<?php echo $telegram['chat_id'] ?? ''; ?>"
+                                       value="<?php echo htmlspecialchars((string)($telegram['chat_id'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                        placeholder="123456789" required>
                                 <small class="text-muted">Dapatkan dari @userinfobot</small>
                             </div>
