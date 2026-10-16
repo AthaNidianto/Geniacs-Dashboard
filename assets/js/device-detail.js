@@ -1,3 +1,16 @@
+// Helper anti-XSS. Didefinisikan juga di sini supaya halaman tetap jalan walau main.js versi lama
+// masih ter-cache di browser (main.js memuat versi yang sama).
+if (typeof window.escapeHtml !== 'function') {
+    window.escapeHtml = function (v) {
+        return String(v === null || v === undefined ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    };
+}
+if (typeof window.escapeAttrJson !== 'function') {
+    window.escapeAttrJson = function (obj) { return window.escapeHtml(JSON.stringify(obj)); };
+}
+
 // Device ID is set via global variable in device-detail.php
 const deviceId = window.DEVICE_ID || '';
 let savedScrollPosition = 0;
