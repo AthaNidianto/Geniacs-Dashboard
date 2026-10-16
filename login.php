@@ -39,12 +39,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['role'] = $user['role'] ?? 'admin';
+                \App\AuditLog::log('Login', '', null, true, 'Login berhasil');
                 redirect('/dashboard.php');
             } else {
                 $error = 'Username atau password salah';
+                \App\AuditLog::log('Login gagal', $username, null, false, 'Password salah', $username);
             }
         } else {
             $error = 'Username atau password salah';
+            \App\AuditLog::log('Login gagal', $username, null, false, 'Username tidak ada', $username);
         }
     }
 }
@@ -111,9 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <div class="footer" style="position: fixed; bottom: 0; width: 100%; background: transparent; color: white;">
-        Made by <a href="https://github.com/safrinnetwork/" target="_blank" style="color: white;">Mostech</a>
-    </div>
+
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

@@ -58,6 +58,12 @@
                 <span>Configuration</span>
             </a>
         </li>
+        <li>
+            <a href="/audit-log.php" class="<?php echo ($currentPage ?? '') === 'audit' ? 'active' : ''; ?>" data-tooltip="Audit Log">
+                <i class="bi bi-journal-text"></i>
+                <span>Audit Log</span>
+            </a>
+        </li>
         <?php endif; ?>
         <li>
             <a href="/logout.php" data-tooltip="Logout">

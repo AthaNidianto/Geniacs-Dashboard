@@ -30,3 +30,6 @@ require_once __DIR__ . '/../lib/helpers.php';
 
 // Batasi akses user role monitor (hanya Dashboard)
 enforceRoleAccess();
+
+// Audit log: catat aksi yang mengubah data (siapa, IP, hasil). Tidak berpengaruh ke request lain.
+\App\AuditLog::autoStart();
