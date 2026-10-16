@@ -36,6 +36,9 @@ include __DIR__ . '/views/layouts/header.php';
         <button class="btn btn-danger" onclick="rebootDevice()">
             <i class="bi bi-arrow-repeat"></i> Reboot
         </button>
+        <button class="btn btn-info" id="btn-ping" onclick="openPingDiag()">
+            <i class="bi bi-activity"></i> Ping
+        </button>
         <button class="btn btn-secondary" id="btn-backup" onclick="openRouterBackup()" style="display:none;">
             <i class="bi bi-cloud-download"></i> Backup
         </button>
@@ -126,12 +129,14 @@ include __DIR__ . '/views/layouts/header.php';
 
 <?php include __DIR__ . '/views/device-detail/modals.php'; ?>
 <?php include __DIR__ . '/views/device-detail/backup-modal.php'; ?>
+<?php include __DIR__ . '/views/device-detail/ping-modal.php'; ?>
 
 <script>
 // Global configuration for device-detail.js
 window.DEVICE_ID = '<?php echo htmlspecialchars($deviceId, ENT_QUOTES, 'UTF-8'); ?>';
 </script>
 <script src="/assets/js/router-backup.js?v=<?php echo time(); ?>"></script>
+<script src="/assets/js/ping-diag.js?v=<?php echo time(); ?>"></script>
 <script src="/assets/js/device-detail.js?v=<?php echo time(); ?>"></script>
 
 <?php include __DIR__ . '/views/layouts/footer.php'; ?>

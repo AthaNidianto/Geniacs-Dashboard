@@ -108,6 +108,8 @@ async function loadDeviceDetail(isAutoRefresh = false) {
 
         // Tombol Backup hanya untuk MikroTik
         if (typeof initRouterBackup === 'function') initRouterBackup(device);
+        // Tombol Ping disembunyikan untuk MikroTik
+        if (typeof initPingDiag === 'function') initPingDiag(device);
 
         // Update tags badge
         updateTagsBadge(device.tags || []);

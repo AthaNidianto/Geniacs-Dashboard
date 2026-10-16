@@ -408,6 +408,124 @@ class GenieACS
         return $this->request($endpoint, 'POST', $data);
     }
 
+    // ------------------------------------------------------------------
+    // PING DIAGNOSTIC (TR-069 IPPingDiagnostics)
+    // ------------------------------------------------------------------
+
+    /** Path parameter diagnostic ping sesuai data model modem. */
+    private function pingBase($root)
+    {
+        return $root === 'tr181' ? 'Device.IP.Diagnostics.IPPing' : 'InternetGatewayDevice.IPPingDiagnostics';
+    }
+
+    /**
+     * Suruh ONU melakukan ping ke $host. Hasilnya diambil terpisah lewat fetchPingResult().
+     *
+     * Return: ['success'=>true, 'root'=>..] atau ['success'=>false, 'no_response'=>true] kalau ONU tidak membalas
+     * (task dihapus dari antrean supaya ONU tidak tiba-tiba ping sendiri nanti), atau ['success'=>false,'error'=>..].
+     */
+    public function startPing($deviceId, $host, $count = 4, $timeoutPerPingMs = 2000, $size = 64, $interface = '')
+    {
+        $root = $this->detectRoot($deviceId);
+        if ($root === null) {
+            return ['success' => false, 'error' => 'Data model ONU belum dikenal. Lakukan Summon Device dulu, lalu coba lagi.'];
+        }
+
+        $base = $this->pingBase($root);
+        $params = [
+            ["{$base}.DiagnosticsState", 'Requested', 'xsd:string'],
+            ["{$base}.Host", (string)$host, 'xsd:string'],
+            ["{$base}.NumberOfRepetitions", (int)$count, 'xsd:unsignedInt'],
+            ["{$base}.Timeout", (int)$timeoutPerPingMs, 'xsd:unsignedInt'],
+            ["{$base}.DataBlockSize", (int)$size, 'xsd:unsignedInt'],
+        ];
+        if ($interface !== '') {
+            $params[] = ["{$base}.Interface", (string)$interface, 'xsd:string'];
+        }
+
+        $endpoint = '/devices/' . rawurlencode($deviceId) . '/tasks?timeout=8000&connection_request';
+        $res = $this->request($endpoint, 'POST', ['name' => 'setParameterValues', 'parameterValues' => $params]);
+
+        if (!$res['success']) {
+            return $res;
+        }
+        if (($res['http_code'] ?? 0) !== 200) {
+            $taskId = $res['data']['_id'] ?? null;
+            if ($taskId) {
+                $this->request('/tasks/' . rawurlencode($taskId), 'DELETE');
+            }
+            return ['success' => false, 'no_response' => true, 'http_code' => $res['http_code'] ?? 202];
+        }
+
+        // Beberapa modem membalas "fault" di body walau HTTP 200 (misal parameter tidak didukung)
+        if (!empty($res['data']['fault'])) {
+            $f = $res['data']['fault'];
+            return ['success' => false, 'error' => 'ONU menolak perintah ping: ' . ($f['message'] ?? ($f['code'] ?? 'fault'))];
+        }
+
+        return ['success' => true, 'root' => $root];
+    }
+
+    /**
+     * Ambil hasil ping terbaru dari ONU (minta ONU melaporkan parameter hasil, lalu baca dari GenieACS).
+     *
+     * Return: ['success'=>true, 'state'=>'Requested|Complete|Error_...|None', 'done'=>bool, 'result'=>[...]]
+     * state 'Requested' = ping masih berjalan, panggil lagi beberapa detik kemudian.
+     */
+    public function fetchPingResult($deviceId)
+    {
+        $root = $this->detectRoot($deviceId);
+        if ($root === null) {
+            return ['success' => false, 'error' => 'Data model ONU belum dikenal'];
+        }
+
+        $base = $this->pingBase($root);
+        $fields = ['DiagnosticsState', 'Host', 'NumberOfRepetitions', 'SuccessCount', 'FailureCount',
+                   'AverageResponseTime', 'MinimumResponseTime', 'MaximumResponseTime'];
+        $paths = array_map(function ($f) use ($base) { return "{$base}.{$f}"; }, $fields);
+
+        // Minta ONU melaporkan nilai terbaru. Kalau ONU sedang sibuk ping dan tidak membalas, task dihapus
+        // (jangan menumpuk di antrean), dan kita tetap kembalikan nilai terakhir yang diketahui GenieACS.
+        $endpoint = '/devices/' . rawurlencode($deviceId) . '/tasks?timeout=5000&connection_request';
+        $res = $this->request($endpoint, 'POST', ['name' => 'getParameterValues', 'parameterNames' => $paths]);
+        $fresh = $res['success'] && ($res['http_code'] ?? 0) === 200;
+        if ($res['success'] && !$fresh) {
+            $taskId = $res['data']['_id'] ?? null;
+            if ($taskId) {
+                $this->request('/tasks/' . rawurlencode($taskId), 'DELETE');
+            }
+        }
+
+        $q = urlencode(json_encode(['_id' => $deviceId]));
+        $projection = urlencode(implode(',', $paths));
+        $dev = $this->request("/devices/?query={$q}&projection={$projection}");
+        if (!$dev['success'] || empty($dev['data'][0])) {
+            return ['success' => false, 'error' => 'Gagal membaca data ONU dari GenieACS'];
+        }
+
+        $node = $dev['data'][0];
+        foreach (explode('.', $base) as $seg) {
+            $node = $node[$seg] ?? [];
+        }
+        $get = function ($name) use ($node) {
+            return isset($node[$name]['_value']) ? $node[$name]['_value'] : null;
+        };
+
+        $state = (string)($get('DiagnosticsState') ?? 'None');
+        $done = ($state !== 'Requested' && $state !== 'None' && $state !== '');
+        $result = [
+            'host'    => $get('Host'),
+            'sent'    => $get('NumberOfRepetitions') !== null ? (int)$get('NumberOfRepetitions') : null,
+            'success' => $get('SuccessCount') !== null ? (int)$get('SuccessCount') : null,
+            'failed'  => $get('FailureCount') !== null ? (int)$get('FailureCount') : null,
+            'avg_ms'  => $get('AverageResponseTime') !== null ? (int)$get('AverageResponseTime') : null,
+            'min_ms'  => $get('MinimumResponseTime') !== null ? (int)$get('MinimumResponseTime') : null,
+            'max_ms'  => $get('MaximumResponseTime') !== null ? (int)$get('MaximumResponseTime') : null,
+        ];
+
+        return ['success' => true, 'state' => $state, 'done' => $done, 'fresh' => $fresh, 'result' => $result];
+    }
+
     public function queueTask($deviceId, array $task, $wake = false, $timeoutMs = 3000)
     {
         $endpoint = "/devices/" . rawurlencode($deviceId) . "/tasks";
