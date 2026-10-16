@@ -21,8 +21,12 @@ class AuditLog
      */
     private static function trustedProxies(): array
     {
-        if (defined('AUDIT_TRUSTED_PROXIES') && is_array(AUDIT_TRUSTED_PROXIES)) {
-            return AUDIT_TRUSTED_PROXIES;
+        // constant() dipakai supaya editor (Intelephense) tidak menandai konstanta opsional ini sebagai error
+        if (defined('AUDIT_TRUSTED_PROXIES')) {
+            $list = constant('AUDIT_TRUSTED_PROXIES');
+            if (is_array($list)) {
+                return $list;
+            }
         }
         return ['127.0.0.1', '::1'];
     }
