@@ -1889,4 +1889,4 @@ document.addEventListener('click', function (e) {
     }
 
     lastCheckedValue = cb.value;
-});
+}); 

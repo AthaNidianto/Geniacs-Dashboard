@@ -39,6 +39,7 @@ $requestedSlot = intval($input['connection_index'] ?? 0);
 $connectionType = strtolower($input['connection_type']); // "ppp" or "ip"
 $connectionName = $input['name'] ?? '';
 $parameters = $input['parameters'];
+$noVlan = !empty($input['no_vlan']);   // "Paksa tanpa VLAN": tulis 0 ke parameter VLAN (hanya kalau VLAN tidak diisi)
 
 // Validate connection type
 if (!in_array($connectionType, ['ppp', 'ip'])) {
@@ -244,6 +245,16 @@ if ($isHuawei) {
     }
 }
 
+// "Paksa tanpa VLAN": ONU mengisi VLAN bawaan sendiri (sering 1) saat objek WAN dibuat. Tulis 0 sebagai
+// task TERPISAH, jadi kalau firmware menolak nilai 0 pembuatan WAN-nya tidak ikut batal.
+// Dilewati kalau user mengisi VLAN (VLAN yang diisi yang menang).
+$vlanLeaf = $isHuawei ? 'X_HW_VLAN' : 'X_CT-COM_VLANID';
+$noVlanApplied = false;
+if ($noVlan && !isset($genieParams[$basePath . '.' . $vlanLeaf])) {
+    $tasks[] = ['name' => 'setParameterValues', 'parameterValues' => [[$basePath . '.' . $vlanLeaf, 0, 'xsd:unsignedInt']]];
+    $noVlanApplied = true;
+}
+
 // Refresh supaya dashboard langsung dapat data terbaru
 $tasks[] = ['name' => 'refreshObject', 'objectName' => $wcdRoot];
 
@@ -269,7 +280,9 @@ foreach ($tasks as $i => $task) {
     }
 }
 
-wanResponse(true, 'Perintah WAN dikirim ke ONU. Data akan muncul setelah ONU memproses (sekitar 1 menit).', [
+wanResponse(true, 'Perintah WAN dikirim ke ONU. Data akan muncul setelah ONU memproses (sekitar 1 menit).'
+    . ($noVlanApplied ? ' VLAN dikosongkan (0); cek kartu WAN setelah ONU memproses, kalau VLAN masih terisi berarti firmware menolak nilai 0.' : ''), [
+    'no_vlan_requested' => $noVlanApplied,
     'task_status' => 'queued',
     'vendor' => $isHuawei ? 'huawei' : 'zte',
     'connection_index' => $slot,

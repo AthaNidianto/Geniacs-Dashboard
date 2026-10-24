@@ -299,6 +299,11 @@
                             <i class="bi bi-tag"></i> VLAN ID <span class="text-muted">(opsional)</span>
                         </label>
                         <input type="number" class="form-control" id="add-wan-vlan" min="1" max="4094" placeholder="1-4094 (kosongkan jika tidak perlu)">
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="add-wan-novlan">
+                            <label class="form-check-label" for="add-wan-novlan">Paksa tanpa VLAN (kosongkan VLAN bawaan ONU)</label>
+                            <div class="form-text">Hanya berlaku kalau kolom VLAN di atas kosong. Banyak ONU mengisi sendiri VLAN bawaan (sering 1); opsi ini menulis 0 ke ONU. Cek hasilnya di kartu WAN setelah sekitar 1 menit.</div>
+                        </div>
                     </div>
 
                     <div class="mb-3">
