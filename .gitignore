@@ -1,0 +1,28 @@
+# Rahasia & milik server (jangan pernah masuk repo)
+/config/database.php
+.env
+.env.local
+
+# Data runtime
+/logs/
+*.log
+
+# Cadangan / sampah
+*.bak
+*.bak[0-9]*
+*.bak-*
+
+# Dependensi (dipasang dengan `composer install`)
+/vendor/
+
+# Salinan lama
+/Geniacs-Dashboard/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

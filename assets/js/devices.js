@@ -1493,6 +1493,14 @@ function applyRbFilter(keepPage = false) {
         devicesToRender = applySorting(devicesToRender, currentSortColumn, currentSortDirection);
     }
 
+    // 4b. Perangkat offline selalu di bawah perangkat online (urutan di dalam tiap grup tidak berubah).
+    // Dilewati kalau user sengaja mengurutkan kolom Status, supaya urutan pilihannya dihormati.
+    if (currentSortColumn !== 'status') {
+        const onlineList = [], offlineList = [];
+        devicesToRender.forEach(d => (d.status === 'online' ? onlineList : offlineList).push(d));
+        devicesToRender = onlineList.concat(offlineList);
+    }
+
     // 5. Jaga-jaga halaman melebihi jumlah halaman yang ada
     if (itemsPerPage > 0) {
         const maxPage = Math.max(1, Math.ceil(devicesToRender.length / itemsPerPage));
