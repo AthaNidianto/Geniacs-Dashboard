@@ -408,7 +408,7 @@ async function renderDevices(devices) {
             const ping = device.ping || '-';
             statusDisplay = `<span class="badge online">ON [${ping}ms]</span>`;
         } else {
-            statusDisplay = `<span class="badge offline">OFF [-]</span>`;
+            statusDisplay = `<span class="badge offline" title="Terakhir terlihat: ${escapeHtml(device.last_inform || 'N/A')}">OFF [-]</span>`;
         }
 
         // Tags display - show as badges
@@ -1498,6 +1498,13 @@ function applyRbFilter(keepPage = false) {
     if (currentSortColumn !== 'status') {
         const onlineList = [], offlineList = [];
         devicesToRender.forEach(d => (d.status === 'online' ? onlineList : offlineList).push(d));
+        // Tanpa pengurutan kolom dari user: yang BARU saja offline (terakhir terlihat paling baru) di atas grup offline,
+        // yang sudah lama mati di paling bawah. Tanpa data last_inform dianggap paling lama.
+        // last_inform berformat "YYYY-MM-DD HH:MM:SS" jadi bisa dibandingkan sebagai teks.
+        if (!currentSortColumn) {
+            const seen = d => (d.last_inform && d.last_inform !== 'N/A') ? d.last_inform : '';
+            offlineList.sort((a, b) => (seen(a) < seen(b) ? 1 : (seen(a) > seen(b) ? -1 : 0)));
+        }
         devicesToRender = onlineList.concat(offlineList);
     }
 
