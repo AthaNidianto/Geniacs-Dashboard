@@ -40,12 +40,19 @@ include __DIR__ . '/views/layouts/header.php';
                         <button class="btn btn-sm btn-info text-white" id="btn-bulk-summon" onclick="summonSelectedDevices()">
                             <i class="bi bi-lightning-charge"></i> Summon
                         </button>
+                        <button class="btn btn-sm btn-secondary" id="btn-ack-new" onclick="ackSelectedNew()" title="Tandai ONU baru yang dipilih sebagai sudah dilihat (tanpa summon)" style="display: none; margin-left: 5px;">
+                            <i class="bi bi-check2-circle"></i> Tandai dilihat
+                        </button>
                         <button class="btn btn-sm btn-danger" onclick="showBulkDeleteModal()" title="Delete Selected Devices" style="margin-left: 5px;">
                             <i class="bi bi-trash"></i> Delete
                         </button>
                         <span id="selected-count" class="badge bg-primary" style="margin-left: 10px;">0 selected</span>
                     </div>
                     <div class="d-flex justify-content-end mb-3 align-items-center">
+                        <!-- ONU baru (belum pernah terlihat, belum di-summon); tampil hanya kalau ada -->
+                        <button type="button" id="btn-new-onu" class="btn btn-sm btn-warning me-3" style="display: none;" onclick="toggleNewOnuFilter()" title="ONU yang baru pertama kali terlihat dan belum di-summon">
+                            <i class="bi bi-stars"></i> ONU Baru <span id="new-onu-count" class="badge bg-dark">0</span>
+                        </button>
                         <!-- Filter Dropdown RB Baru -->
                         <div class="me-3">
                             <select class="form-select form-select-sm" id="rbFilter" onchange="applyRbFilter()" style="min-width: 150px;">

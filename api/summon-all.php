@@ -54,6 +54,19 @@ try {
     // Concurrency 40 = jumlah koneksi paralel ke NBI GenieACS. Turunkan kalau NBI mulai error/timeout.
     // Berhasil = ONU membalas dalam $timeoutMs; selain itu gagal (lihat result['failed']).
     $result = $genieacs->bulkSummonVerify($deviceIds, $timeoutMs, 40);
+
+    // ONU yang membalas (bukan yang gagal) tidak lagi bertanda BARU
+    try {
+        $failedIds = [];
+        foreach (($result['failed'] ?? []) as $f) {
+            if (isset($f['id'])) $failedIds[$f['id']] = true;
+        }
+        $okIds = array_values(array_filter($deviceIds, function ($id) use ($failedIds) { return !isset($failedIds[$id]); }));
+        \App\KnownDevices::markSummoned($conn, $okIds);
+    } catch (\Throwable $e) {
+        error_log('[known_devices] ' . $e->getMessage());
+    }
+
     jsonResponse($result);
 } catch (Exception $e) {
     jsonResponse([

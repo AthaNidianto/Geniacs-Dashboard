@@ -56,6 +56,7 @@ class AuditLog
         'map-update-server-links' => 'Map: ubah link server',
         'clear-client-log'       => 'Hapus log client',
         'recalculate-odp-power'  => 'Hitung ulang power ODP',
+        'new-devices'            => ['label' => 'ONU baru', 'only' => ['ack' => 'tandai sudah dilihat']],
         // Endpoint dengan banyak action: hanya action di bawah ini yang dicatat
         'router-backup'          => ['label' => 'Backup router', 'only' => ['save' => 'simpan pengaturan', 'run' => 'jalankan backup', 'delete' => 'hapus pengaturan']],
         'ping-diag'              => ['label' => 'Ping diagnostic', 'only' => ['start' => 'mulai']],

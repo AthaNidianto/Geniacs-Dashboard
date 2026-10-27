@@ -105,6 +105,74 @@ function filterByBrand(value) {
 // ---------------------------------------------------------------------------
 // LOAD DATA
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ONU BARU (belum pernah terlihat, ditahan: belum di-summon)
+// ---------------------------------------------------------------------------
+let newDeviceIds = new Set();
+let currentNewFilter = false;
+
+async function loadNewDevices() {
+    try {
+        const res = await fetchAPI('/api/new-devices.php');
+        if (res && res.success) {
+            newDeviceIds = new Set((res.devices || []).map(d => d.device_id));
+        }
+    } catch (e) {
+        console.debug('[DEVICES] new-devices error', e);   // gagal tidak boleh mengganggu tabel
+    }
+    updateNewOnuButton();
+}
+
+function updateNewOnuButton() {
+    const btn = document.getElementById('btn-new-onu');
+    if (!btn) return;
+    const n = newDeviceIds.size;
+    document.getElementById('new-onu-count').textContent = n;
+    if (n === 0) currentNewFilter = false;     // tidak ada lagi yang baru: filter otomatis mati
+    btn.style.display = (n > 0 && currentFilterType === 'onu') ? '' : 'none';
+    btn.classList.toggle('btn-warning', !currentNewFilter);
+    btn.classList.toggle('btn-dark', currentNewFilter);
+}
+
+function toggleNewOnuFilter() {
+    currentNewFilter = !currentNewFilter;
+    updateNewOnuButton();
+    applyRbFilter();
+}
+
+function newOnuBadge(device) {
+    if (!newDeviceIds.has(device.device_id)) return '';
+    return ' <span class="badge bg-warning text-dark" title="ONU baru: pertama kali terlihat dan belum di-summon">BARU</span>';
+}
+
+// Tombol "Tandai dilihat" hanya muncul kalau ada ONU baru di antara yang dicentang
+function updateAckNewButton() {
+    const btn = document.getElementById('btn-ack-new');
+    if (!btn) return;
+    const any = getSelectedDeviceIds().some(id => newDeviceIds.has(id));
+    btn.style.display = any ? '' : 'none';
+}
+
+async function ackSelectedNew() {
+    const ids = getSelectedDeviceIds().filter(id => newDeviceIds.has(id));
+    if (!ids.length) {
+        showToast('Pilih ONU yang bertanda BARU dulu.', 'warning');
+        return;
+    }
+    const result = await fetchAPI('/api/new-devices.php', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'ack', device_ids: ids })
+    });
+    if (result && result.success) {
+        showToast(result.message || 'Ditandai sudah dilihat', 'success');
+    } else {
+        showToast((result && result.message) || 'Gagal menandai', 'danger');
+    }
+    resetSelection();
+    await loadNewDevices();
+    applyRbFilter(true);
+}
+
 async function loadDevices(isAutoRefresh = false) {
     // Pause auto-refresh selama bulk action (supaya server nggak dobel beban)
     if (isAutoRefresh && bulkBusy) return;
@@ -202,6 +270,9 @@ async function loadDevices(isAutoRefresh = false) {
         } else {
             updateDeviceTypeCountsFromMap(allDevices, {});
         }
+
+        // Daftar ONU baru (untuk badge BARU + filter); dimuat sebelum render
+        await loadNewDevices();
 
         // ...baru render dengan filter RB/status/search/sort, supaya badge terakhir
         // ditulis oleh hasil filter
@@ -453,7 +524,7 @@ async function renderDevices(devices) {
             <td>
                 <input type="checkbox" class="device-checkbox" value="${encodeURIComponent(device.device_id)}" onchange="updateBulkActionButtons()">
             </td>
-            <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${escapeHtml(device.serial_number)}</a></td>
+            <td><a href="/device-detail.php?id=${encodeURIComponent(device.device_id)}">${escapeHtml(device.serial_number)}</a>${newOnuBadge(device)}</td>
             <td>${escapeHtml(device.mac_address)}</td>
             <td data-sort-value="${escapeHtml(device.product_class || '')}">${escapeHtml(device.product_class || 'N/A')}</td>
             <td data-sort-value="${ipAddress}">${ipDisplay}</td>
@@ -759,6 +830,10 @@ function filterByType(type) {
     currentSortDirection = 'asc';
     resetSortIcons();
 
+    // Filter "ONU Baru" hanya untuk tab ONU
+    if (type !== 'onu') currentNewFilter = false;
+    updateNewOnuButton();
+
     if (isDeviceTab(type)) {
         // ONU / MikroTik: lewat master filter supaya filter RB/status tetap kepakai
         applyRbFilter();
@@ -958,6 +1033,7 @@ async function confirmSummon() {
 
     if (result && result.success) {
         showToast('Device summon berhasil!', 'success');
+        loadNewDevices().then(() => applyRbFilter(true));    // ONU yang tadinya BARU tidak lagi bertanda
     } else {
         showToast(result?.message || 'Gagal summon device', 'danger');
     }
@@ -1168,6 +1244,8 @@ function updateBulkActionButtons() {
             bulkActionButtons.style.display = 'none';
         }
     }
+
+    updateAckNewButton();
 
     // Update select-all checkbox state
     const selectAllCheckbox = document.getElementById('select-all-checkbox');
@@ -1471,6 +1549,11 @@ function applyRbFilter(keepPage = false) {
         devicesToRender = devicesToRender.filter(device => getBrandKey(device) === currentBrandFilter);
     }
 
+    // 2d. Filter ONU baru
+    if (currentNewFilter) {
+        devicesToRender = devicesToRender.filter(device => newDeviceIds.has(device.device_id));
+    }
+
     // 3. Filter search
     const searchInput = document.getElementById('search-input');
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
@@ -1496,8 +1579,13 @@ function applyRbFilter(keepPage = false) {
     // 4b. Perangkat offline selalu di bawah perangkat online (urutan di dalam tiap grup tidak berubah).
     // Dilewati kalau user sengaja mengurutkan kolom Status, supaya urutan pilihannya dihormati.
     if (currentSortColumn !== 'status') {
-        const onlineList = [], offlineList = [];
-        devicesToRender.forEach(d => (d.status === 'online' ? onlineList : offlineList).push(d));
+        // ONU baru (belum di-summon) paling atas supaya langsung terlihat, selama user tidak mengurutkan kolom
+        const newList = [], onlineList = [], offlineList = [];
+        devicesToRender.forEach(d => {
+            if (!currentSortColumn && newDeviceIds.has(d.device_id)) newList.push(d);
+            else if (d.status === 'online') onlineList.push(d);
+            else offlineList.push(d);
+        });
         // Tanpa pengurutan kolom dari user: yang BARU saja offline (terakhir terlihat paling baru) di atas grup offline,
         // yang sudah lama mati di paling bawah. Tanpa data last_inform dianggap paling lama.
         // last_inform berformat "YYYY-MM-DD HH:MM:SS" jadi bisa dibandingkan sebagai teks.
@@ -1505,7 +1593,7 @@ function applyRbFilter(keepPage = false) {
             const seen = d => (d.last_inform && d.last_inform !== 'N/A') ? d.last_inform : '';
             offlineList.sort((a, b) => (seen(a) < seen(b) ? 1 : (seen(a) > seen(b) ? -1 : 0)));
         }
-        devicesToRender = onlineList.concat(offlineList);
+        devicesToRender = newList.concat(onlineList, offlineList);
     }
 
     // 5. Jaga-jaga halaman melebihi jumlah halaman yang ada
@@ -1814,6 +1902,8 @@ async function svStart() {
     svRenderResult({ total: ids.length, ok, fail, faults, notProcessed: ids.length - done, secs, timeoutMs, tVerify, tFill });
     resetSelection();
 
+    if (ok > 0) loadNewDevices().then(() => applyRbFilter(true));    // ONU yang membalas tidak lagi bertanda BARU
+
     // Modem butuh waktu mengisi data (SSID, client); refresh tabel setelah jeda
     if (ok > 0) setTimeout(() => loadDevices(true), 30000);
 }
@@ -1889,4 +1979,4 @@ document.addEventListener('click', function (e) {
     }
 
     lastCheckedValue = cb.value;
-}); 
+});

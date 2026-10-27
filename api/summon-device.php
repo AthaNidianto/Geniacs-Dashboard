@@ -45,6 +45,8 @@ $timeoutMs = max(1000, min(30000, $timeoutMs));
 $result = $genieacs->summonAndFetchAdminCredentials($deviceId, $timeoutMs);
 
 if ($result['success']) {
+    // ONU membalas: kalau tadinya ONU baru yang ditahan, tidak lagi bertanda BARU
+    try { \App\KnownDevices::markSummoned($conn, [$deviceId]); } catch (\Throwable $e) { error_log('[known_devices] ' . $e->getMessage()); }
     jsonResponse(['success' => true, 'message' => 'ONU membalas. Admin credentials sedang diambil...']);
 } elseif (!empty($result['no_response'])) {
     jsonResponse([
