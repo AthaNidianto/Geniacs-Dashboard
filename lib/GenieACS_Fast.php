@@ -57,6 +57,9 @@ class GenieACS_Fast {
         $data['manufacturer'] = $device['_deviceId']['_Manufacturer'] ?? 'N/A';
         $data['oui'] = $device['_deviceId']['_OUI'] ?? 'N/A';
         $data['product_class'] = $device['_deviceId']['_ProductClass'] ?? 'N/A';
+        // Identity router MikroTik (/system identity), dilaporkan lewat parameter vendor TR-069
+        $data['identity'] = $device['InternetGatewayDevice']['DeviceInfo']['X_MIKROTIK_SystemIdentity']['_value']
+            ?? $device['Device']['DeviceInfo']['X_MIKROTIK_SystemIdentity']['_value'] ?? '';
         $data['hardware_version'] = $device['InternetGatewayDevice']['DeviceInfo']['HardwareVersion']['_value'] ?? 'N/A';
         $data['software_version'] = $device['InternetGatewayDevice']['DeviceInfo']['SoftwareVersion']['_value'] ?? 'N/A';
 
@@ -182,13 +185,24 @@ class GenieACS_Fast {
             $data['temperature'] = 'N/A';
         }
 
-        // PPPoE Username - check multiple WAN connection devices
+        // PPPoE Username - cek semua slot WAN (1..8) dan semua instance PPP di tiap slot (1..6).
+        // ZTE menaruh beberapa WAN sebagai instance berbeda dalam satu slot, Huawei satu WAN per slot,
+        // jadi membaca instance .1 saja membuat PPPoE di instance lain tampil N/A.
         $pppoeUsername = 'N/A';
-        for ($i = 1; $i <= 8; $i++) {
-            $username = $device['InternetGatewayDevice']['WANDevice']['1']['WANConnectionDevice'][$i]['WANPPPConnection']['1']['Username']['_value'] ?? null;
+        for ($i = 1; $i <= 8 && $pppoeUsername === 'N/A'; $i++) {
+            for ($j = 1; $j <= 6; $j++) {
+                $username = $device['InternetGatewayDevice']['WANDevice']['1']['WANConnectionDevice'][$i]['WANPPPConnection'][$j]['Username']['_value'] ?? null;
+                if ($username && $username !== '' && $username !== 'N/A') {
+                    $pppoeUsername = $username;
+                    break;
+                }
+            }
+        }
+        // TR-181
+        for ($i = 1; $i <= 4 && $pppoeUsername === 'N/A'; $i++) {
+            $username = $device['Device']['PPP']['Interface'][$i]['Username']['_value'] ?? null;
             if ($username && $username !== '' && $username !== 'N/A') {
                 $pppoeUsername = $username;
-                break;
             }
         }
         $data['pppoe_username'] = $pppoeUsername;
