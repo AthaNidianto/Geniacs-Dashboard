@@ -197,50 +197,91 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// Sidebar Toggle Functionality
+// Sidebar: di desktop bisa diciutkan (tersimpan di localStorage); di HP/tablet (<= 991px) jadi laci geser
+// yang dibuka dengan tombol menu di topbar dan ditutup lewat layar gelap, tombol Esc, atau memilih menu.
 document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sidebar');
     const mainContent = document.getElementById('mainContent');
     const sidebarToggle = document.getElementById('sidebarToggle');
+    const menuToggle = document.getElementById('menuToggle');
+    const backdrop = document.getElementById('sidebarBackdrop');
 
-    if (!sidebar || !mainContent || !sidebarToggle) {
+    if (!sidebar || !mainContent) {
         return;
     }
 
-    const toggleIcon = sidebarToggle.querySelector('i');
+    const mobileMq = window.matchMedia('(max-width: 991.98px)');
+    const toggleIcon = sidebarToggle ? sidebarToggle.querySelector('i') : null;
 
-    // Check localStorage for saved state
-    const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+    function setIcon(collapsed) {
+        if (!toggleIcon) return;
+        toggleIcon.classList.toggle('bi-chevron-right', collapsed);
+        toggleIcon.classList.toggle('bi-chevron-left', !collapsed);
+    }
 
-    if (sidebarCollapsed) {
-        sidebar.classList.add('collapsed');
-        mainContent.classList.add('collapsed');
-        if (toggleIcon) {
-            toggleIcon.classList.remove('bi-chevron-left');
-            toggleIcon.classList.add('bi-chevron-right');
+    function storedCollapsed() {
+        try { return localStorage.getItem('sidebarCollapsed') === 'true'; } catch (e) { return false; }
+    }
+
+    function setDrawer(open) {
+        sidebar.classList.toggle('active', open);
+        if (backdrop) backdrop.classList.toggle('show', open);
+        document.body.classList.toggle('nav-open', open);
+        if (menuToggle) {
+            menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+            menuToggle.setAttribute('aria-label', open ? 'Tutup menu' : 'Buka menu');
         }
     }
 
-    // Toggle sidebar on button click
-    sidebarToggle.addEventListener('click', function(e) {
-        e.preventDefault();
-
-        sidebar.classList.toggle('collapsed');
-        mainContent.classList.toggle('collapsed');
-
-        // Update icon
-        if (sidebar.classList.contains('collapsed')) {
-            if (toggleIcon) {
-                toggleIcon.classList.remove('bi-chevron-left');
-                toggleIcon.classList.add('bi-chevron-right');
-            }
-            localStorage.setItem('sidebarCollapsed', 'true');
+    // Pasang tampilan sesuai ukuran layar: HP selalu menu penuh (tidak diciutkan), desktop ikut pilihan tersimpan
+    function applyLayout() {
+        if (mobileMq.matches) {
+            sidebar.classList.remove('collapsed');
+            mainContent.classList.remove('collapsed');
+            setIcon(false);
         } else {
-            if (toggleIcon) {
-                toggleIcon.classList.remove('bi-chevron-right');
-                toggleIcon.classList.add('bi-chevron-left');
-            }
-            localStorage.setItem('sidebarCollapsed', 'false');
+            setDrawer(false);
+            const collapsed = storedCollapsed();
+            sidebar.classList.toggle('collapsed', collapsed);
+            mainContent.classList.toggle('collapsed', collapsed);
+            setIcon(collapsed);
         }
+    }
+    applyLayout();
+    if (mobileMq.addEventListener) {
+        mobileMq.addEventListener('change', applyLayout);
+    } else if (mobileMq.addListener) {
+        mobileMq.addListener(applyLayout);
+    }
+
+    // Desktop: ciutkan / lebarkan sidebar
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (mobileMq.matches) {
+                setDrawer(false);
+                return;
+            }
+            const collapsed = sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('collapsed', collapsed);
+            setIcon(collapsed);
+            try { localStorage.setItem('sidebarCollapsed', collapsed ? 'true' : 'false'); } catch (e2) {}
+        });
+    }
+
+    // HP/tablet: buka / tutup laci menu
+    if (menuToggle) {
+        menuToggle.addEventListener('click', function() {
+            setDrawer(!sidebar.classList.contains('active'));
+        });
+    }
+    if (backdrop) {
+        backdrop.addEventListener('click', function() { setDrawer(false); });
+    }
+    sidebar.querySelectorAll('.sidebar-menu a').forEach(function(a) {
+        a.addEventListener('click', function() { setDrawer(false); });
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') setDrawer(false);
     });
 });

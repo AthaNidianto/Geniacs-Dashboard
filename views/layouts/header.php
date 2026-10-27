@@ -24,6 +24,9 @@
 </head>
 
 <body>
+    <!-- Layar gelap di belakang menu (hanya dipakai di HP/tablet saat menu terbuka) -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -83,9 +86,15 @@
     <div class="main-content" id="mainContent">
         <!-- Topbar -->
         <div class="topbar">
-            <h4><?php echo $pageTitle ?? APP_NAME; ?></h4>
+            <div class="topbar-left">
+                <!-- Tombol menu: hanya tampil di HP/tablet (sidebar jadi laci geser) -->
+                <button type="button" class="menu-toggle" id="menuToggle" aria-label="Buka menu" aria-controls="sidebar" aria-expanded="false">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <h4><?php echo $pageTitle ?? APP_NAME; ?></h4>
+            </div>
             <div class="user-info">
-                <span><i class="bi bi-person-circle"></i> <?php echo htmlspecialchars($_SESSION['username'] ?? 'User', ENT_QUOTES, 'UTF-8'); ?></span>
+                <span><i class="bi bi-person-circle"></i> <span class="user-name"><?php echo htmlspecialchars($_SESSION['username'] ?? 'User', ENT_QUOTES, 'UTF-8'); ?></span></span>
             </div>
         </div>
 

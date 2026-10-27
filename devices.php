@@ -19,7 +19,7 @@ include __DIR__ . '/views/layouts/header.php';
 <?php else: ?>
     <div class="card">
         <div class="card-header devices-header">
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex justify-content-between align-items-center devices-head-row">
                 <div>
                     <i class="bi bi-router"></i> Device List
                     <span id="device-stats-badges" style="margin-left: 10px;">
@@ -48,13 +48,13 @@ include __DIR__ . '/views/layouts/header.php';
                         </button>
                         <span id="selected-count" class="badge bg-primary" style="margin-left: 10px;">0 selected</span>
                     </div>
-                    <div class="d-flex justify-content-end mb-3 align-items-center">
+                    <div class="d-flex justify-content-end mb-3 align-items-center devices-filters">
                         <!-- ONU baru (belum pernah terlihat, belum di-summon); tampil hanya kalau ada -->
                         <button type="button" id="btn-new-onu" class="btn btn-sm btn-warning me-3" style="display: none;" onclick="toggleNewOnuFilter()" title="ONU yang baru pertama kali terlihat dan belum di-summon">
                             <i class="bi bi-stars"></i> ONU Baru <span id="new-onu-count" class="badge bg-dark">0</span>
                         </button>
                         <!-- Filter Dropdown RB Baru -->
-                        <div class="me-3">
+                        <div class="me-3 filter-extra">
                             <select class="form-select form-select-sm" id="rbFilter" onchange="applyRbFilter()" style="min-width: 150px;">
                                 <option value="all">Semua RouterBoard</option>
                                 <option value="56c">RB 56c</option>
@@ -68,7 +68,7 @@ include __DIR__ . '/views/layouts/header.php';
                         </div>
 
                         <!-- Filter Dropdown Redaman -->
-                        <div class="me-3">
+                        <div class="me-3 filter-extra">
                             <select class="form-select form-select-sm" id="rxFilter" onchange="filterByRx(this.value)" style="min-width: 150px;">
                                 <option value="all">Semua Redaman</option>
                                 <option value="bagus">Bagus</option>
@@ -79,7 +79,7 @@ include __DIR__ . '/views/layouts/header.php';
 
                         <!-- Filter Dropdown Merek Onu -->
 
-                        <div class="me-3">
+                        <div class="me-3 filter-extra">
                             <select class="form-select form-select-sm" id="brandFilter" onchange="filterByBrand(this.value)" style="min-width: 150px;">
                                 <option value="all">Semua Merek</option>
                                 <option value="ZTE">ZTE</option>
@@ -88,12 +88,16 @@ include __DIR__ . '/views/layouts/header.php';
                             </select>
                         </div>
 
-                            <button class="btn btn-sm btn-info text-white me-2 btn-primary" onclick="syncRbTags()" title="Auto-tag device baru berdasarkan IP">
+                            <button class="btn btn-sm btn-info text-white me-2 btn-primary filter-extra" onclick="syncRbTags()" title="Auto-tag device baru berdasarkan IP">
                                 <i class="bi bi-magic"></i> Sync Tags
                             </button>
 
-                            <button class="btn btn-sm btn-secondary" id="toggle-tags-btn" onclick="toggleTagsColumn()" style="margin-right: 10px;">
+                            <button class="btn btn-sm btn-secondary filter-extra" id="toggle-tags-btn" onclick="toggleTagsColumn()" style="margin-right: 10px;">
                                 <i class="bi bi-tags"></i> Show Tags
+                            </button>
+                            <!-- Hanya HP/tablet: buka/tutup filter supaya daftar perangkat tidak terdorong jauh ke bawah -->
+                            <button type="button" class="btn btn-sm btn-outline-secondary filter-toggle d-none" id="btn-filter-toggle" onclick="toggleDeviceFilters()" aria-expanded="false">
+                                <i class="bi bi-funnel"></i> Filter
                             </button>
                             <button class="btn btn-primary" onclick="loadDevices()">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -145,6 +149,13 @@ include __DIR__ . '/views/layouts/header.php';
                     <div class="col-md-4 text-end">
                         <span class="text-muted" id="device-count">Loading...</span>
                     </div>
+                </div>
+
+                <!-- Urutkan: hanya tampil di HP/tablet (di sana judul kolom hilang karena tabel jadi kartu) -->
+                <div class="mobile-sort d-none align-items-center gap-2 mb-3">
+                    <label class="mb-0 text-muted" for="mobile-sort-select" style="white-space: nowrap;"><i class="bi bi-sort-down"></i> Urutkan</label>
+                    <select class="form-select form-select-sm" id="mobile-sort-select" onchange="mobileSortChange(this.value)"></select>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="mobile-sort-dir" onclick="mobileSortToggle()" title="Balik urutan" style="white-space: nowrap;">&uarr;&darr;</button>
                 </div>
 
                 <div class="table-responsive" style="overflow-x: auto;">
