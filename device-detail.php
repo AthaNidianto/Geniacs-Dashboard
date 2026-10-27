@@ -26,7 +26,7 @@ include __DIR__ . '/views/layouts/header.php';
     </div>
 <?php else: ?>
     <!-- Back Button -->
-    <div class="mb-3">
+    <div class="mb-3 detail-actions">
         <a href="/devices.php" class="btn btn-secondary">
             <i class="bi bi-arrow-left"></i> Back to Devices
         </a>

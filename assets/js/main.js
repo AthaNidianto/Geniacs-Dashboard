@@ -289,3 +289,47 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Escape') setDrawer(false);
     });
 });
+
+// Tabel "table-cards" tampil sebagai kartu di HP/tablet (lihat style.css). Judul kolom diambil dari <thead>
+// dan dipasang sebagai data-label di tiap sel, termasuk untuk baris yang dibuat belakangan oleh JS.
+(function () {
+    function labelTable(table) {
+        const heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (th) {
+            return th.textContent.replace(/\s+/g, ' ').trim();
+        });
+        if (!heads.length) return;
+        table.querySelectorAll('tbody tr').forEach(function (tr) {
+            Array.prototype.forEach.call(tr.children, function (td, i) {
+                if (td.tagName === 'TD' && !td.hasAttribute('data-label') && !td.hasAttribute('colspan') && heads[i]) {
+                    td.setAttribute('data-label', heads[i]);
+                }
+            });
+        });
+    }
+
+    function labelAll() {
+        document.querySelectorAll('table.table-cards').forEach(labelTable);
+    }
+
+    let queued = false;
+    function schedule() {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(function () { queued = false; labelAll(); });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        labelAll();
+        if (window.MutationObserver) {
+            new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+        }
+    });
+})();
+
+// Tab yang baru dipilih ikut digeser ke area terlihat (deretan tab bisa di-scroll ke samping di HP)
+document.addEventListener('shown.bs.tab', function (e) {
+    const t = e.target;
+    if (t && t.closest && t.closest('.nav-tabs') && t.scrollIntoView) {
+        t.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+});
