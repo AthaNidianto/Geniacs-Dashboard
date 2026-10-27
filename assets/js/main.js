@@ -1,3 +1,4 @@
+// GACS Dashboard JavaScript Utilities
 
 // Keamanan XSS: data dari ONU/CPE (SSID, hostname, versi firmware, nama WAN, dll) TIDAK boleh dimasukkan
 // mentah ke innerHTML. Selalu lewat escapeHtml() (teks / atribut) atau escapeAttrJson() (JSON di dalam atribut).
@@ -169,9 +170,12 @@ function formatUptime(seconds) {
     return result || '0 menit';
 }
 
-// Add animation styles
-const style = document.createElement('style');
-style.textContent = `
+// Add animation styles (dibungkus fungsi + dicek id-nya: aman kalau main.js termuat dua kali, tidak ada variabel global)
+(function () {
+    if (document.getElementById('gacs-anim-style')) return;
+    const animStyle = document.createElement('style');
+    animStyle.id = 'gacs-anim-style';
+    animStyle.textContent = `
     @keyframes slideInRight {
         from {
             transform: translateX(100%);
@@ -194,7 +198,8 @@ style.textContent = `
         }
     }
 `;
-document.head.appendChild(style);
+    document.head.appendChild(animStyle);
+})();
 
 // Sidebar: di desktop bisa diciutkan (tersimpan di localStorage); di HP/tablet (<= 991px) jadi laci geser
 // yang dibuka dengan tombol menu di topbar dan ditutup lewat layar gelap, tombol Esc, atau memilih menu.
