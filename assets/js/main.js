@@ -1,4 +1,3 @@
-// GACS Dashboard JavaScript Utilities
 
 // Keamanan XSS: data dari ONU/CPE (SSID, hostname, versi firmware, nama WAN, dll) TIDAK boleh dimasukkan
 // mentah ke innerHTML. Selalu lewat escapeHtml() (teks / atribut) atau escapeAttrJson() (JSON di dalam atribut).
