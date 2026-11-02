@@ -8,6 +8,10 @@
 // MODE BAWAAN (tahan): ONU baru TIDAK di-summon. Dicatat berstatus "new", muncul bertanda BARU di halaman
 //   Devices (tombol "ONU Baru"), dan dikirim notifikasi Telegram. Admin yang memutuskan: summon manual dari
 //   dashboard (status jadi "ok") atau "Tandai dilihat" tanpa summon.
+// ONU RESET: kalau ada ONU "baru" yang SN-nya sama dengan ONU lama yang sudah offline (ID GenieACS berbeda, mis. setelah
+//   reset lalu di-add ulang dengan IP baru), baris lama dihapus dari GenieACS, tag-nya dipindah ke yang baru, dan
+//   ONU itu TIDAK ditandai BARU. Syarat: yang baru sedang online dan semua yang lama sudah >10 menit tidak inform.
+//   Matikan dengan --no-replace.
 // MODE --auto: ONU baru otomatis di-summon (ONU harus membalas), supaya SSID, client, dan admin credentials
 //   langsung terisi. ONU berstatus "new" yang sudah menumpuk ikut di-summon bertahap.
 //
@@ -53,6 +57,24 @@ function notifyNewOnu($conn, array $items) {
     }
 }
 
+// Kabari kalau ONU reset sudah dikenali dan baris lamanya diganti.
+function notifyReplacedOnu($conn, array $items) {
+    try {
+        $r = $conn->query("SELECT * FROM telegram_config WHERE is_connected = 1 ORDER BY id DESC LIMIT 1");
+        $cfg = $r ? $r->fetch_assoc() : null;
+        if (!$cfg) return;
+        $bot = new \App\TelegramBot($cfg['bot_token'], $cfg['chat_id']);
+        $lines = [];
+        foreach (array_slice($items, 0, 15) as $it) {
+            $lines[] = '• <code>' . htmlspecialchars($it['sn']) . '</code> ' . htmlspecialchars($it['model']);
+        }
+        $bot->sendMessage("♻️ <b>ONU kembali setelah reset (" . count($items) . ")</b>\n" . implode("\n", $lines) .
+            "\n\nSN sama dengan ONU lama yang offline: data lama dihapus dari GenieACS, tag dipindah. Tidak ditandai BARU.");
+    } catch (\Throwable $e) {
+        logln('Notifikasi Telegram gagal: ' . $e->getMessage());
+    }
+}
+
 // Satu proses saja pada satu waktu
 $lock = fopen(sys_get_temp_dir() . '/gacs-auto-summon.lock', 'c');
 if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) exit(0);
@@ -67,12 +89,15 @@ if (!$cfg) { logln('GenieACS belum dikonfigurasi, keluar.'); exit; }
 $genieacs = new GenieACS($cfg['host'], $cfg['port'], $cfg['username'], $cfg['password']);
 
 // 1) Daftar device saat ini (hanya field kecil)
-$r = $genieacs->getDevices([], 0, 0, '_id,_deviceId._Manufacturer,_deviceId._ProductClass,_deviceId._SerialNumber');
+$r = $genieacs->getDevices([], 0, 0, '_id,_lastInform,_tags,_deviceId._Manufacturer,_deviceId._ProductClass,_deviceId._SerialNumber');
 if (empty($r['success']) || !is_array($r['data'] ?? null)) {
     logln('Gagal ambil daftar device dari GenieACS.');
     exit(1);
 }
 $current = [];
+$lastInformTs = [];   // id => waktu inform terakhir (unix)
+$tagsOf = [];         // id => daftar tag
+$idsBySn = [];        // serial (huruf kecil) => daftar id GenieACS (non-router)
 $meta = [];   // id => ['sn' => ..., 'model' => ...] untuk isi notifikasi
 foreach ($r['data'] as $d) {
     if (empty($d['_id'])) continue;
@@ -81,6 +106,11 @@ foreach ($r['data'] as $d) {
     $isRouter = strpos($maker, 'mikrotik') !== false || strpos($maker, 'routerboard') !== false || strpos($model, 'rb') === 0;
     $current[$d['_id']] = $isRouter;
     $meta[$d['_id']] = ['sn' => (string)($d['_deviceId']['_SerialNumber'] ?? $d['_id']), 'model' => (string)($d['_deviceId']['_ProductClass'] ?? '')];
+    $lastInformTs[$d['_id']] = !empty($d['_lastInform']) ? (int)strtotime($d['_lastInform']) : 0;
+    $tagsOf[$d['_id']] = is_array($d['_tags'] ?? null) ? $d['_tags'] : [];
+    if (!$isRouter && $meta[$d['_id']]['sn'] !== '') {
+        $idsBySn[strtolower($meta[$d['_id']]['sn'])][] = $d['_id'];
+    }
 }
 if (!$current) { logln('Daftar device kosong, dilewati.'); exit; }
 
@@ -93,6 +123,62 @@ $new = array_diff_key($current, $known);
 // Jalan pertama, --seed, atau lonjakan device baru yang tidak wajar (>100, mis. data GenieACS di-reset):
 // dicatat sebagai dikenal saja, tidak di-summon massal.
 $firstRun = empty($known) || in_array('--seed', $argv ?? [], true) || count($new) > 100;
+
+// 2b) ONU reset: SN sama dengan device lama yang sudah offline -> ganti yang lama, bukan "baru".
+const REPLACE_STALE_SEC = 600;   // dianggap offline kalau >10 menit tidak inform
+$replaceEnabled = !in_array('--no-replace', $argv ?? [], true);
+$replaced = [];                   // untuk notifikasi: ['sn','model','old'=>jumlah baris lama]
+if ($new && !$firstRun && $replaceEnabled) {
+    $now = time();
+    foreach (array_keys($new) as $nid) {
+        if (!empty($new[$nid])) continue;   // router: lewati
+        $sn = strtolower($meta[$nid]['sn'] ?? '');
+        if ($sn === '' || empty($idsBySn[$sn])) continue;
+        $dups = array_values(array_filter($idsBySn[$sn], function ($x) use ($nid) { return $x !== $nid; }));
+        if (!$dups) continue;
+
+        $newOnline = ($now - ($lastInformTs[$nid] ?? 0)) <= REPLACE_STALE_SEC;
+        $allStale = true;
+        foreach ($dups as $o) {
+            if (($now - ($lastInformTs[$o] ?? 0)) <= REPLACE_STALE_SEC) { $allStale = false; break; }
+        }
+        if (!$newOnline || !$allStale) {
+            logln("SN {$meta[$nid]['sn']}: ada ID ganda tapi belum memenuhi syarat ganti (baru online: " . ($newOnline ? 'ya' : 'belum') .
+                  ", lama semua offline: " . ($allStale ? 'ya' : 'belum') . "), diperlakukan sebagai ONU baru.");
+            continue;
+        }
+
+        $deleted = 0;
+        foreach ($dups as $o) {
+            // pindahkan tag lama yang belum ada di yang baru
+            foreach (array_diff($tagsOf[$o] ?? [], $tagsOf[$nid] ?? []) as $tag) {
+                $genieacs->addTag($nid, $tag);
+            }
+            $del = $genieacs->deleteDevice($o);
+            if (!empty($del['success'])) {
+                $deleted++;
+                $dstmt = $conn->prepare("DELETE FROM known_devices WHERE device_id = ?");
+                $dstmt->bind_param('s', $o);
+                $dstmt->execute();
+                unset($current[$o], $known[$o]);
+                logln("ONU reset: $o dihapus, digantikan $nid (SN {$meta[$nid]['sn']}).");
+            } else {
+                logln("Gagal hapus $o dari GenieACS (HTTP " . ($del['http_code'] ?? '?') . "), dibiarkan.");
+            }
+        }
+        if ($deleted === count($dups)) {
+            $note = 'ONU lama kembali (reset), data lama diganti';
+            $rstmt = $conn->prepare("INSERT IGNORE INTO known_devices (device_id, first_seen, status, note) VALUES (?, NOW(), 'ok', ?)");
+            $rstmt->bind_param('ss', $nid, $note);
+            $rstmt->execute();
+            unset($new[$nid]);
+            $replaced[] = ['sn' => $meta[$nid]['sn'], 'model' => $meta[$nid]['model'], 'old' => $deleted];
+        }
+    }
+    if ($replaced) {
+        notifyReplacedOnu($conn, $replaced);
+    }
+}
 
 if ($new) {
     $stmt = $conn->prepare("INSERT IGNORE INTO known_devices (device_id, first_seen, status, note) VALUES (?, NOW(), ?, ?)");

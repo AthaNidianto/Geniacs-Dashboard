@@ -206,6 +206,22 @@ class GenieACS
     }
 
     /**
+     * Hapus device dari GenieACS (DELETE /devices/:id). Dipakai cron saat ONU reset muncul lagi dengan ID baru.
+     */
+    public function deleteDevice($deviceId)
+    {
+        return $this->request('/devices/' . rawurlencode($deviceId), 'DELETE');
+    }
+
+    /**
+     * Pasang satu tag ke device (POST /devices/:id/tags/:tag).
+     */
+    public function addTag($deviceId, $tag)
+    {
+        return $this->request('/devices/' . rawurlencode($deviceId) . '/tags/' . rawurlencode($tag), 'POST');
+    }
+
+    /**
      * Summon device (connection request)
      */
     public function summonDevice($deviceId)
