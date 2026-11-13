@@ -47,29 +47,6 @@ document.getElementById('form-genieacs').addEventListener('submit', async functi
     }
 });
 
-// MikroTik Form
-document.getElementById('form-mikrotik').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    showLoading();
-
-    const formData = new FormData(this);
-    const data = Object.fromEntries(formData);
-
-    const result = await fetchAPI('/api/test-mikrotik.php', {
-        method: 'POST',
-        body: JSON.stringify(data)
-    });
-
-    hideLoading();
-
-    if (result && result.success) {
-        showToast(result.message, 'success');
-        setTimeout(() => location.reload(), 1500);
-    } else {
-        showToast(result?.message || 'Koneksi gagal', 'danger');
-    }
-});
-
 // Telegram Form
 document.getElementById('form-telegram').addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -102,28 +79,6 @@ async function saveGenieACS() {
     showLoading();
 
     const result = await fetchAPI('/api/save-genieacs.php', {
-        method: 'POST',
-        body: JSON.stringify(data)
-    });
-
-    hideLoading();
-
-    if (result && result.success) {
-        showToast(result.message, 'success');
-    } else {
-        showToast(result.message || 'Gagal menyimpan konfigurasi', 'danger');
-    }
-}
-
-// Save MikroTik Configuration
-async function saveMikroTik() {
-    const form = document.getElementById('form-mikrotik');
-    const formData = new FormData(form);
-    const data = Object.fromEntries(formData);
-
-    showLoading();
-
-    const result = await fetchAPI('/api/save-mikrotik.php', {
         method: 'POST',
         body: JSON.stringify(data)
     });

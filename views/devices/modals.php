@@ -26,34 +26,6 @@
     </div>
 </div>
 
-<!-- Not In Map Alert Modal -->
-<div class="modal fade" id="notInMapModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-exclamation-circle"></i> ONU Belum Terdaftar
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body text-center py-4">
-                <i class="bi bi-map" style="font-size: 3rem; color: var(--secondary-color);"></i>
-                <h5 class="mt-3">ONU Belum Terdaftar di Map</h5>
-                <p class="text-muted mb-2">Device dengan Serial Number <strong id="not-in-map-serial"></strong> belum terdaftar di Network Map.</p>
-                <p class="text-muted mb-0"><small>Silakan tambahkan ONU ini ke map terlebih dahulu untuk melihat lokasi topologi.</small></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x-lg"></i> Tutup
-                </button>
-                <button type="button" class="btn btn-primary" onclick="window.open('/map.php', '_blank')">
-                    <i class="bi bi-map"></i> Buka Network Map
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Bulk Add Tag Modal -->
 <div class="modal fade" id="bulkAddTagModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">

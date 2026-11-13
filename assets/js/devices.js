@@ -200,12 +200,8 @@ async function loadDevices(isAutoRefresh = false) {
     let hasMore = true;
 
     try {
-        // Load first chunk with map data in parallel
-        const [firstChunk, mapCountsResult, mapItemsResult] = await Promise.all([
-            fetchAPI(`/api/get-devices.php?limit=${chunkSize}&skip=${skip}`),
-            fetchAPI('/api/get-map-counts.php'),
-            fetchAPI('/api/map-get-items.php')
-        ]);
+        // Load first chunk
+        const firstChunk = await fetchAPI(`/api/get-devices.php?limit=${chunkSize}&skip=${skip}`);
 
         if (!firstChunk || !firstChunk.success) {
             throw new Error(firstChunk?.message || 'Failed to load devices');
@@ -265,23 +261,14 @@ async function loadDevices(isAutoRefresh = false) {
         }
 
         // Update tab counts dulu (nulis total mentah)...
-        if (mapCountsResult && mapCountsResult.success) {
-            updateDeviceTypeCountsFromMap(allDevices, mapCountsResult.counts);
-        } else {
-            updateDeviceTypeCountsFromMap(allDevices, {});
-        }
+        updateDeviceTypeCountsFromMap(allDevices, {});
 
         // Daftar ONU baru (untuk badge BARU + filter); dimuat sebelum render
         await loadNewDevices();
 
         // ...baru render dengan filter RB/status/search/sort, supaya badge terakhir
         // ditulis oleh hasil filter
-        if (isDeviceTab(currentFilterType)) {
-            applyRbFilter(true);
-        } else {
-            renderMapItems(currentFilterType);
-            updateDeviceStats([], false);
-        }
+        applyRbFilter(true);
 
         // Restore scroll position and sort icons after auto-refresh
         if (isAutoRefresh) {
@@ -331,11 +318,6 @@ async function renderDevices(devices) {
     const colspan = currentFilterType === 'mikrotik' ? 10 : (currentFilterType === 'onu' ? 12 : 6);
 
     if (devices.length === 0) {
-        // If showing infrastructure items, show map items instead
-        if (!isDeviceTab(currentFilterType)) {
-            renderMapItems(currentFilterType);
-            return;
-        }
         tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center">No devices found</td></tr>`;
         updatePaginationUI(0);
         updateBulkActionButtons();
@@ -356,49 +338,13 @@ async function renderDevices(devices) {
     // Update pagination UI
     updatePaginationUI(totalDevices);
 
-    // Fetch map status for all devices on current page using BATCH API
-    const serialNumbers = devicesToRender.map(device => device.serial_number);
-
-    let mapStatusMap = {};
-
-    try {
-        const batchResult = await fetchAPI('/api/get-onu-location-batch.php', {
-            method: 'POST',
-            body: JSON.stringify({ serial_numbers: serialNumbers })
-        });
-
-        if (batchResult && batchResult.success && batchResult.locations) {
-            // Convert batch result to map status format
-            Object.keys(batchResult.locations).forEach(serial => {
-                const location = batchResult.locations[serial];
-                mapStatusMap[serial] = {
-                    inMap: location.found || false,
-                    itemType: location.item_type || 'onu',
-                    itemId: location.onu?.id || location.server?.id || null
-                };
-            });
-        }
-    } catch (error) {
-        console.error('Batch map status fetch failed:', error);
-        // Fallback: all devices marked as not in map
-        devicesToRender.forEach(device => {
-            mapStatusMap[device.serial_number] = {
-                inMap: false,
-                itemType: 'onu',
-                itemId: null
-            };
-        });
-    }
-
-    // Tabel bisa dirender ulang selagi menunggu batch API; bersihkan lagi biar nggak dobel baris
+    // Tabel bisa dirender ulang; bersihkan lagi biar nggak dobel baris
     tbody.innerHTML = '';
 
     devicesToRender.forEach(device => {
         const row = document.createElement('tr');
         row.className = 'dev-row' + (device.status === 'online' ? '' : ' dev-offline');   // dipakai tampilan kartu di HP
         const ipAddress = extractIP(device.ip_tr069);
-        const mapInfo = mapStatusMap[device.serial_number] || { inMap: false, itemType: 'onu', itemId: null };
-        const isInMap = mapInfo.inMap;
 
         // Create clickable IP link if IP is valid
         let ipDisplay;
@@ -451,28 +397,6 @@ async function renderDevices(devices) {
             }
             rxDisplay = `<span class="badge ${rxBadgeClass}">${escapeHtml(device.rx_power)} dBm</span>`;
         }
-
-        // Map button - conditional based on registration status
-        // let mapButton;
-        // if (isInMap) {
-        //     // Green button - opens map in new tab
-        //     let mapUrl;
-        //     if (mapInfo.itemType === 'mikrotik') {
-        //         // For MikroTik devices, focus on server
-        //         mapUrl = `/map.php?focus_type=server&focus_id=${mapInfo.itemId}`;
-        //     } else {
-        //         // For ONU devices, focus on ONU
-        //         mapUrl = `/map.php?focus_type=onu&focus_serial=${encodeURIComponent(device.serial_number)}`;
-        //     }
-        //     mapButton = `<button class="btn btn-sm btn-success me-1" onclick="window.open('${mapUrl}', '_blank')" title="View on Map">
-        //         <i class="bi bi-map"></i>
-        //     </button>`;
-        // } else {
-        //     // Gray button - shows alert
-        //     mapButton = `<button class="btn btn-sm btn-secondary me-1" onclick="showNotInMapAlert('${encodeURIComponent(device.serial_number)}')" title="Not Registered in Map">
-        //         <i class="bi bi-map"></i>
-        //     </button>`;
-        // }
 
         // Status badge with ping
         let statusDisplay;
@@ -551,79 +475,6 @@ async function renderDevices(devices) {
 
     // Sinkronkan bar bulk-action dengan checkbox yang baru dirender
     updateBulkActionButtons();
-}
-
-// Render map items (for infrastructure: Server, OLT, ODC, ODP)
-function renderMapItems(itemType) {
-    const tbody = document.getElementById('devices-tbody');
-    tbody.innerHTML = '';
-
-    let items = [];
-
-    if (itemType === 'olt') {
-        // OLT stored in Server properties, not as separate items
-        // Extract OLT info from Servers that have olt_link configured
-        allMapItems.forEach(item => {
-            if (item.item_type === 'server' && item.properties && item.properties.olt_link) {
-                items.push({
-                    id: item.id,
-                    name: item.properties.olt_link || 'OLT',
-                    item_type: 'olt',
-                    latitude: item.latitude,
-                    longitude: item.longitude,
-                    status: item.status,
-                    server_name: item.name
-                });
-            }
-        });
-    } else {
-        // Filter map items by type for other infrastructure
-        items = allMapItems.filter(item => item.item_type === itemType);
-    }
-
-    if (items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No items found</td></tr>';
-        updateDeviceCount(0, 0);
-        return;
-    }
-
-    items.forEach(item => {
-        const row = document.createElement('tr');
-
-        // Get status badge
-        const status = item.status || 'unknown';
-        let statusBadge = '';
-        if (status === 'online') {
-            statusBadge = '<span class="badge online">Online</span>';
-        } else if (status === 'offline') {
-            statusBadge = '<span class="badge offline">Offline</span>';
-        } else {
-            statusBadge = '<span class="badge bg-secondary">Unknown</span>';
-        }
-
-        // Format coordinates
-        const lat = parseFloat(item.latitude).toFixed(6);
-        const lng = parseFloat(item.longitude).toFixed(6);
-
-        // For OLT, show server name in parentheses
-        const displayName = itemType === 'olt' ? `${escapeHtml(item.name)} (${escapeHtml(item.server_name)})` : escapeHtml(item.name);
-
-        row.innerHTML = `
-            <td>${displayName}</td>
-            <td><span class="badge bg-primary">${itemType.toUpperCase()}</span></td>
-            <td>${lat}</td>
-            <td>${lng}</td>
-            <td>${statusBadge}</td>
-            <td>
-                <button class="btn btn-sm btn-success" onclick="window.open('/map.php?focus_type=server&focus_id=${parseInt(item.id, 10) || 0}', '_blank')" title="View on Map">
-                    <i class="bi bi-map"></i>
-                </button>
-            </td>
-        `;
-        tbody.appendChild(row);
-    });
-
-    updateDeviceCount(items.length, items.length);
 }
 
 function updateDeviceCount(shown, total) {
@@ -888,15 +739,8 @@ function filterByType(type) {
     if (type !== 'onu') currentNewFilter = false;
     updateNewOnuButton();
 
-    if (isDeviceTab(type)) {
-        // ONU / MikroTik: lewat master filter supaya filter RB/status tetap kepakai
-        applyRbFilter();
-    } else {
-        // For ODP, ODC, OLT, Server: show map items
-        renderMapItems(type);
-        // Hide stats for infrastructure tabs
-        updateDeviceStats([], false);
-    }
+    // Lewat master filter supaya filter RB/status tetap kepakai
+    applyRbFilter();
 }
 
 function extractIP(ipString) {
@@ -1056,14 +900,6 @@ function summonDeviceQuick(deviceId) {
     currentSummonDeviceId = deviceId;
     document.getElementById('summon-device-id').textContent = deviceId;
     const modal = new bootstrap.Modal(document.getElementById('summonModal'), {
-        backdrop: false
-    });
-    modal.show();
-}
-
-function showNotInMapAlert(serialNumber) {
-    document.getElementById('not-in-map-serial').textContent = decodeURIComponent(serialNumber);
-    const modal = new bootstrap.Modal(document.getElementById('notInMapModal'), {
         backdrop: false
     });
     modal.show();

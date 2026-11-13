@@ -9,7 +9,6 @@ $currentPage = 'configuration';
 $conn = getDBConnection();
 
 $genieacs = $conn->query("SELECT * FROM genieacs_credentials LIMIT 1")->fetch_assoc();
-$mikrotik = $conn->query("SELECT * FROM mikrotik_credentials LIMIT 1")->fetch_assoc();
 $telegram = $conn->query("SELECT * FROM telegram_config LIMIT 1")->fetch_assoc();
 
 include __DIR__ . '/views/layouts/header.php';
@@ -35,11 +34,6 @@ include __DIR__ . '/views/layouts/header.php';
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="acs-tab" data-bs-toggle="tab" data-bs-target="#acs-config" type="button" role="tab">
                     <i class="bi bi-hdd-network"></i> ACS Config
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="mikrotik-tab" data-bs-toggle="tab" data-bs-target="#mikrotik-config" type="button" role="tab">
-                    <i class="bi bi-ethernet"></i> MikroTik Config
                 </button>
             </li>
             <li class="nav-item" role="presentation">
@@ -131,57 +125,6 @@ include __DIR__ . '/views/layouts/header.php';
                             <?php if ($genieacs && $genieacs['last_test']): ?>
                                 <small class="text-muted d-block mt-2">
                                     Last test: <?php echo timeAgo($genieacs['last_test']); ?>
-                                </small>
-                            <?php endif; ?>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
-            <!-- MikroTik Config Tab -->
-            <div class="tab-pane fade" id="mikrotik-config" role="tabpanel">
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <i class="bi bi-ethernet"></i> Konfigurasi MikroTik
-                        <?php if ($mikrotik && $mikrotik['is_connected']): ?>
-                            <span class="badge online float-end">Connected</span>
-                        <?php endif; ?>
-                    </div>
-                    <div class="card-body">
-                        <form id="form-mikrotik">
-                            <div class="form-group">
-                                <label>Host</label>
-                                <input type="text" name="host" class="form-control"
-                                       value="<?php echo htmlspecialchars((string)($mikrotik['host'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                       placeholder="192.168.1.1" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Port API</label>
-                                <input type="number" name="port" class="form-control"
-                                       value="<?php echo htmlspecialchars((string)($mikrotik['port'] ?? '8728'), ENT_QUOTES, 'UTF-8'); ?>"
-                                       placeholder="8728" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Username</label>
-                                <input type="text" name="username" class="form-control"
-                                       value="<?php echo htmlspecialchars((string)($mikrotik['username'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                       placeholder="admin" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Password</label>
-                                <input type="password" name="password" class="form-control"
-                                       value="<?php echo htmlspecialchars((string)($mikrotik['password'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                       placeholder="Password" required>
-                            </div>
-                            <button type="submit" class="btn btn-success me-2">
-                                <i class="bi bi-check-circle"></i> Test Connection
-                            </button>
-                            <button type="button" class="btn btn-primary" onclick="saveMikroTik()">
-                                <i class="bi bi-save"></i> Simpan
-                            </button>
-                            <?php if ($mikrotik && $mikrotik['last_test']): ?>
-                                <small class="text-muted d-block mt-2">
-                                    Last test: <?php echo timeAgo($mikrotik['last_test']); ?>
                                 </small>
                             <?php endif; ?>
                         </form>

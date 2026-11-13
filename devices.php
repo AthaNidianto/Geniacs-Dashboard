@@ -114,12 +114,6 @@ include __DIR__ . '/views/layouts/header.php';
                             <i class="bi bi-wifi"></i> ONU <span class="badge bg-primary ms-1" id="count-onu">0</span>
                         </button>
                     </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="mikrotik-tab" data-bs-toggle="tab" data-bs-target="#mikrotik" type="button" role="tab" onclick="filterByType('mikrotik')">
-                            <i class="bi bi-router"></i> MikroTik <span class="badge bg-primary ms-1" id="count-mikrotik">0</span>
-                        </button>
-                    </li>
-
                 </ul>
                 <!-- Search Box and Pagination Controls -->
                 <div class="row mb-3 devices-toolbar">

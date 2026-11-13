@@ -113,34 +113,6 @@ include __DIR__ . '/views/layouts/header.php';
     </div>
 </div>
 
-<!-- Not In Map Alert Modal -->
-<div class="modal fade" id="notInMapModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-exclamation-circle"></i> ONU Belum Terdaftar
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body text-center py-4">
-                <i class="bi bi-map" style="font-size: 3rem; color: var(--secondary-color);"></i>
-                <h5 class="mt-3">ONU Belum Terdaftar di Map</h5>
-                <p class="text-muted mb-2">Device dengan Serial Number <strong id="not-in-map-serial"></strong> belum terdaftar di Network Map.</p>
-                <p class="text-muted mb-0"><small>Silakan tambahkan ONU ini ke map terlebih dahulu untuk melihat lokasi topologi.</small></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x-lg"></i> Tutup
-                </button>
-                <button type="button" class="btn btn-primary" onclick="window.open('/map.php', '_blank')">
-                    <i class="bi bi-map"></i> Buka Network Map
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 let dashboardFetchInProgress = false;
@@ -658,14 +630,6 @@ function summonDeviceQuick(deviceId) {
     currentSummonDeviceId = deviceId;
     document.getElementById('summon-device-id').textContent = deviceId;
     const modal = new bootstrap.Modal(document.getElementById('summonModal'), {
-        backdrop: false
-    });
-    modal.show();
-}
-
-function showNotInMapAlert(serialNumber) {
-    document.getElementById('not-in-map-serial').textContent = decodeURIComponent(serialNumber);
-    const modal = new bootstrap.Modal(document.getElementById('notInMapModal'), {
         backdrop: false
     });
     modal.show();

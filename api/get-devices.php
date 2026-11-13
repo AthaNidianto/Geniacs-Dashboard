@@ -101,9 +101,6 @@ try {
 
     if ($devicesResult['success']) {
         $devices = [];
-        // Identity router MikroTik tidak dikirim lewat TR-069; diambil dari data Router Backup
-        $identityMap = App\RouterBackup::identityMap(getDBConnection());
-
         // Use selected parser
         foreach ($devicesResult['data'] as $device) {
             if ($useFastParser) {
@@ -112,9 +109,6 @@ try {
             } else {
                 // Full parser - complete data extraction
                 $parsed = $genieacs->parseDeviceData($device);
-            }
-            if ($identityMap && isset($parsed['device_id'], $identityMap[$parsed['device_id']])) {
-                $parsed['identity'] = $identityMap[$parsed['device_id']];
             }
             $devices[] = $parsed;
         }

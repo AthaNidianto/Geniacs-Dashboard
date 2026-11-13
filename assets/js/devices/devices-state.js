@@ -5,7 +5,6 @@
 
 // Global variables for devices data and sorting
 let allDevices = [];
-let allMapItems = []; // Store map items
 let currentSortColumn = null;
 let currentSortDirection = 'asc';
 let currentFilterType = 'onu'; // Track current filter type (default: onu)

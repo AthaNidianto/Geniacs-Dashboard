@@ -14,7 +14,6 @@ if (typeof window.escapeAttrJson !== 'function') {
 // Device ID is set via global variable in device-detail.php
 const deviceId = window.DEVICE_ID || '';
 let savedScrollPosition = 0;
-let savedHotspotData = {}; // Store last known hotspot data
 
 // Helper function to get active tab name
 function getActiveTabName() {
@@ -25,66 +24,7 @@ function getActiveTabName() {
     return tabText.replace(/\(\d+\)/g, '').trim(); // Remove badge counts like (2)
 }
 
-// Save current hotspot data before re-render
-function saveCurrentHotspotData() {
-    savedHotspotData = {};
-
-    const userCells = document.querySelectorAll('.hotspot-user[data-mac]');
-    const trafficCells = document.querySelectorAll('.hotspot-traffic[data-mac]');
-
-    userCells.forEach(cell => {
-        const mac = cell.getAttribute('data-mac');
-        if (!savedHotspotData[mac]) savedHotspotData[mac] = {};
-        savedHotspotData[mac].userHtml = cell.innerHTML;
-    });
-
-    trafficCells.forEach(cell => {
-        const mac = cell.getAttribute('data-mac');
-        if (!savedHotspotData[mac]) savedHotspotData[mac] = {};
-        savedHotspotData[mac].trafficHtml = cell.innerHTML;
-    });
-
-    if (Object.keys(savedHotspotData).length > 0) {
-        console.debug('[HOTSPOT] Saved data for', Object.keys(savedHotspotData).length, 'devices before re-render');
-    }
-}
-
-// Restore saved hotspot data after re-render
-function restoreSavedHotspotData() {
-    let restoredCount = 0;
-
-    Object.keys(savedHotspotData).forEach(mac => {
-        const data = savedHotspotData[mac];
-        const userCell = document.querySelector(`.hotspot-user[data-mac="${mac}"]`);
-        const trafficCell = document.querySelector(`.hotspot-traffic[data-mac="${mac}"]`);
-
-        if (userCell && data.userHtml) {
-            userCell.innerHTML = data.userHtml;
-            restoredCount++;
-        }
-
-        if (trafficCell && data.trafficHtml) {
-            trafficCell.innerHTML = data.trafficHtml;
-        }
-    });
-
-    if (restoredCount > 0) {
-        console.debug('[HOTSPOT] Restored data for', restoredCount, 'devices after re-render');
-    }
-}
-
 async function loadDeviceDetail(isAutoRefresh = false) {
-    // SKIP auto-refresh if hotspot monitoring is active to prevent conflicts
-    if (isAutoRefresh && hotspotMonitoringActive) {
-        console.debug('[AUTO-REFRESH] Skipping device detail refresh while hotspot monitoring is active');
-        return; // Skip refresh completely
-    }
-
-    // Save hotspot data BEFORE re-render (if auto-refresh)
-    if (isAutoRefresh) {
-        saveCurrentHotspotData();
-    }
-
     // Save current scroll position if this is an auto-refresh
     if (isAutoRefresh) {
         savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
@@ -110,17 +50,9 @@ async function loadDeviceDetail(isAutoRefresh = false) {
     if (result && result.success) {
         const device = result.device;
 
-        // Fetch ONU location from map (hanya kalau tab Topology masih dipakai di halaman)
-        const topologyEl = document.getElementById('topology-content');
-        const locationResult = topologyEl
-            ? await fetchAPI('/api/get-onu-location.php?serial_number=' + encodeURIComponent(device.serial_number))
-            : null;
-
         // Update badge
         document.getElementById('device-id-badge').textContent = device.serial_number;
 
-        // Tombol Backup hanya untuk MikroTik
-        if (typeof initRouterBackup === 'function') initRouterBackup(device);
         // Tombol Ping disembunyikan untuk MikroTik
         if (typeof initPingDiag === 'function') initPingDiag(device);
 
@@ -221,11 +153,6 @@ async function loadDeviceDetail(isAutoRefresh = false) {
             </div>
         `;
 
-        // Populate Topology Location Tab
-        if (topologyEl) {
-            topologyEl.innerHTML = renderTopologyLocationTab(locationResult);
-        }
-
         // Populate LAN Ports Tab
         currentLanDevice = device;
         const lanEl = document.getElementById('lan-content');
@@ -245,14 +172,6 @@ async function loadDeviceDetail(isAutoRefresh = false) {
 
         // Populate Connected Devices Tab
         document.getElementById('devices-content').innerHTML = renderConnectedDevicesTab(device.connected_devices);
-
-        // Restore hotspot data after re-render (if available)
-        if (isAutoRefresh && Object.keys(savedHotspotData).length > 0) {
-            setTimeout(() => {
-                restoreSavedHotspotData();
-                console.debug('[AUTO-REFRESH] Restored hotspot data for', Object.keys(savedHotspotData).length, 'devices');
-            }, 50);
-        }
 
         // Hide loading, show tabs (only if they were hidden)
         document.getElementById('loading-spinner').style.display = 'none';
@@ -281,28 +200,6 @@ async function loadDeviceDetail(isAutoRefresh = false) {
             }, 50);
         }
 
-        // Restart hotspot monitoring if it was active before refresh
-        if (hotspotMonitoringActive) {
-            // Add delay to prevent immediate fetch after refresh (reduce load spikes)
-            setTimeout(() => {
-                const loadBtn = document.getElementById('load-hotspot-btn');
-                if (loadBtn) {
-                    console.log('[AUTO-REFRESH] Restarting hotspot monitoring (with 3s delay to reduce load)...');
-                    // Don't call startHotspotTrafficMonitoring() directly - it fetches immediately
-                    // Instead, just restart the interval without immediate fetch
-                    const stopBtn = document.getElementById('stop-hotspot-btn');
-                    const statusEl = document.getElementById('hotspot-status');
-
-                    if (loadBtn) loadBtn.style.display = 'none';
-                    if (stopBtn) stopBtn.style.display = 'inline-block';
-                    if (statusEl) statusEl.innerHTML = '<span class="text-muted">⏱ Waiting for next update...</span>';
-
-                    // 5 second interval - balanced between smooth updates and MikroTik load
-                    hotspotTrafficInterval = setInterval(fetchHotspotTraffic, 5000);
-                    console.log('[HOTSPOT] Monitoring restarted (5s interval)');
-                }
-            }, 3000); // 3 second delay before restarting
-        }
     } else {
         // Show error in loading area
         document.getElementById('loading-spinner').innerHTML = '<div class="alert alert-danger">Failed to load device details</div>';
@@ -327,265 +224,6 @@ function makeIPClickable(ip) {
     }
 
     return `<a href="http://${ip}" target="_blank" rel="noopener noreferrer" title="Open http://${ip}">${ip}</a>`;
-}
-
-function renderTopologyLocationTab(locationResult) {
-    if (!locationResult || !locationResult.success) {
-        return '<div class="alert alert-info"><i class="bi bi-info-circle"></i> Unable to load topology location</div>';
-    }
-
-    // ONU not found in map
-    if (!locationResult.location || !locationResult.location.found) {
-        return `
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle"></i>
-                <strong>Topology Location:</strong> This device has not been added to the network map yet.
-                <a href="/map.php" class="alert-link">Add to map</a>
-            </div>
-        `;
-    }
-
-    const loc = locationResult.location;
-    let html = '';
-
-    // Build hierarchy path
-    let pathParts = [];
-    if (loc.server && loc.server.name) {
-        pathParts.push(`<span class="badge bg-secondary">${escapeHtml(loc.server.name)}</span>`);
-    }
-    if (loc.olt && loc.olt.name) {
-        pathParts.push(`<span class="badge bg-info">${escapeHtml(loc.olt.name)}</span>`);
-    }
-    if (loc.odc && loc.odc.name) {
-        pathParts.push(`<span class="badge bg-warning text-dark">${escapeHtml(loc.odc.name)}</span>`);
-    }
-    if (loc.odp && loc.odp.name) {
-        pathParts.push(`<span class="badge bg-success">${escapeHtml(loc.odp.name)}</span>`);
-    }
-    if (loc.onu && loc.onu.name) {
-        pathParts.push(`<span class="badge bg-primary">${escapeHtml(loc.onu.name)}</span>`);
-    }
-
-    if (pathParts.length > 0) {
-        html += '<div class="mb-3">';
-        html += '<h6><i class="bi bi-diagram-3"></i> Hierarchy Path</h6>';
-        html += '<div class="p-3 bg-light rounded">' + pathParts.join(' <i class="bi bi-arrow-right"></i> ') + '</div>';
-        html += '</div>';
-    }
-
-    html += '<table class="table table-bordered">';
-
-    // ODP Information
-    if (loc.odp && loc.odp.name) {
-        html += `
-            <tr>
-                <th width="30%"><i class="bi bi-box"></i> ODP</th>
-                <td>
-                    <strong>${escapeHtml(loc.odp.name)}</strong>
-                    <a href="/map.php?focus_type=odp&focus_id=${escapeHtml(loc.odp.id)}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
-
-    // Port Number
-    if (loc.onu && loc.onu.port && loc.onu.port !== 'N/A') {
-        html += `
-            <tr>
-                <th><i class="bi bi-plug"></i> Port Number</th>
-                <td><span class="badge bg-info">Port ${escapeHtml(loc.onu.port)}</span></td>
-            </tr>
-        `;
-    }
-
-    // ODC Information
-    if (loc.odc && loc.odc.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-building"></i> ODC</th>
-                <td>
-                    <strong>${escapeHtml(loc.odc.name)}</strong>
-                    <a href="/map.php?focus_type=odc&focus_id=${escapeHtml(loc.odc.id)}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
-
-    // OLT Information
-    if (loc.olt && loc.olt.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-hdd-network"></i> OLT</th>
-                <td><strong>${escapeHtml(loc.olt.name)}</strong></td>
-            </tr>
-        `;
-    }
-
-    // Coordinates and Google Maps
-    if (loc.onu && loc.onu.lat && loc.onu.lng) {
-        const lat = parseFloat(loc.onu.lat);
-        const lng = parseFloat(loc.onu.lng);
-
-        // Only show if coordinates are not 0,0
-        if (lat !== 0 && lng !== 0) {
-            const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-
-            html += `
-                <tr>
-                    <th><i class="bi bi-geo-alt"></i> Coordinates</th>
-                    <td>
-                        <code>${lat.toFixed(6)}, ${lng.toFixed(6)}</code>
-                        <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
-                            <i class="bi bi-globe"></i> View on Google Maps
-                        </a>
-                        <a href="/map.php?focus_type=onu&focus_id=${escapeHtml(loc.onu.id)}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
-                            <i class="bi bi-map"></i> View on Network Map
-                        </a>
-                    </td>
-                </tr>
-            `;
-        }
-    }
-
-    html += '</table>';
-    return html;
-}
-
-function renderTopologyLocation(locationResult) {
-    if (!locationResult || !locationResult.success) {
-        return '';
-    }
-
-    // ONU not found in map
-    if (!locationResult.location || !locationResult.location.found) {
-        return `
-            <div class="alert alert-info mb-3">
-                <i class="bi bi-info-circle"></i>
-                <strong>Topology Location:</strong> This device has not been added to the network map yet.
-                <a href="/map.php" class="alert-link">Add to map</a>
-            </div>
-        `;
-    }
-
-    const loc = locationResult.location;
-    let html = '<div class="card mb-3 border-primary">';
-    html += '<div class="card-header bg-primary text-white">';
-    html += '<i class="bi bi-diagram-3"></i> <strong>Network Topology Location</strong>';
-    html += '</div>';
-    html += '<div class="card-body">';
-
-    // Build hierarchy path
-    let pathParts = [];
-    if (loc.server && loc.server.name) {
-        pathParts.push(`<span class="badge bg-secondary">${escapeHtml(loc.server.name)}</span>`);
-    }
-    if (loc.olt && loc.olt.name) {
-        pathParts.push(`<span class="badge bg-info">${escapeHtml(loc.olt.name)}</span>`);
-    }
-    if (loc.odc && loc.odc.name) {
-        pathParts.push(`<span class="badge bg-warning text-dark">${escapeHtml(loc.odc.name)}</span>`);
-    }
-    if (loc.odp && loc.odp.name) {
-        pathParts.push(`<span class="badge bg-success">${escapeHtml(loc.odp.name)}</span>`);
-    }
-    if (loc.onu && loc.onu.name) {
-        pathParts.push(`<span class="badge bg-primary">${escapeHtml(loc.onu.name)}</span>`);
-    }
-
-    if (pathParts.length > 0) {
-        html += '<div class="mb-3">';
-        html += '<strong>Hierarchy Path:</strong><br>';
-        html += pathParts.join(' <i class="bi bi-arrow-right"></i> ');
-        html += '</div>';
-    }
-
-    html += '<table class="table table-sm table-bordered mb-0">';
-
-    // ODP Information
-    if (loc.odp && loc.odp.name) {
-        html += `
-            <tr>
-                <th width="30%"><i class="bi bi-box"></i> ODP</th>
-                <td>
-                    <strong>${escapeHtml(loc.odp.name)}</strong>
-                    <a href="/map.php?focus_type=odp&focus_id=${escapeHtml(loc.odp.id)}" class="btn btn-sm btn-outline-primary ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
-
-    // Port Number
-    if (loc.onu && loc.onu.port && loc.onu.port !== 'N/A') {
-        html += `
-            <tr>
-                <th><i class="bi bi-plug"></i> Port Number</th>
-                <td><span class="badge bg-info">Port ${escapeHtml(loc.onu.port)}</span></td>
-            </tr>
-        `;
-    }
-
-    // ODC Information
-    if (loc.odc && loc.odc.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-building"></i> ODC</th>
-                <td>
-                    <strong>${escapeHtml(loc.odc.name)}</strong>
-                    <a href="/map.php?focus_type=odc&focus_id=${escapeHtml(loc.odc.id)}" class="btn btn-sm btn-outline-warning ms-2" target="_blank">
-                        <i class="bi bi-map"></i> View on Map
-                    </a>
-                </td>
-            </tr>
-        `;
-    }
-
-    // OLT Information
-    if (loc.olt && loc.olt.name) {
-        html += `
-            <tr>
-                <th><i class="bi bi-hdd-network"></i> OLT</th>
-                <td><strong>${escapeHtml(loc.olt.name)}</strong></td>
-            </tr>
-        `;
-    }
-
-    // Coordinates and Google Maps
-    if (loc.onu && loc.onu.lat && loc.onu.lng) {
-        const lat = parseFloat(loc.onu.lat);
-        const lng = parseFloat(loc.onu.lng);
-
-        // Only show if coordinates are not 0,0
-        if (lat !== 0 && lng !== 0) {
-            const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-
-            html += `
-                <tr>
-                    <th><i class="bi bi-geo-alt"></i> Coordinates</th>
-                    <td>
-                        <code>${lat.toFixed(6)}, ${lng.toFixed(6)}</code>
-                        <a href="${googleMapsUrl}" class="btn btn-sm btn-success ms-2" target="_blank" rel="noopener noreferrer">
-                            <i class="bi bi-globe"></i> View on Google Maps
-                        </a>
-                        <a href="/map.php?focus_type=onu&focus_id=${escapeHtml(loc.onu.id)}" class="btn btn-sm btn-outline-primary ms-1" target="_blank">
-                            <i class="bi bi-map"></i> View on Network Map
-                        </a>
-                    </td>
-                </tr>
-            `;
-        }
-    }
-
-    html += '</table>';
-    html += '</div>';
-    html += '</div>';
-
-    return html;
 }
 
 function renderWANDetailsTab(wanDetails) {
@@ -1154,9 +792,6 @@ function renderConnectedDevicesTab(connectedDevices) {
     let html = '<h6><i class="bi bi-hdd-network"></i> Connected Devices <span class="badge bg-primary">' + connectedDevices.length + '</span></h6>';
 
     html += `
-        <div class="mb-3">
-            <small class="text-muted" id="hotspot-status"><i class="bi bi-router"></i> Hotspot monitoring will start automatically...</small>
-        </div>
         <div class="table-responsive">
             <table class="table table-sm table-bordered table-hover table-cards" id="connected-devices-table">
                 <thead class="table-light">
@@ -1167,8 +802,6 @@ function renderConnectedDevicesTab(connectedDevices) {
                         <th width="15%"><i class="bi bi-ethernet"></i> MAC Address</th>
                         <th width="10%" class="text-center"><i class="bi bi-wifi"></i> Connection</th>
                         <th width="10%" class="text-center"><i class="bi bi-check-circle"></i> Status</th>
-                        <th width="13%"><i class="bi bi-person-badge"></i> Hotspot User</th>
-                        <th width="18%"><i class="bi bi-speedometer2"></i> Traffic (RX / TX)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1209,12 +842,6 @@ function renderConnectedDevicesTab(connectedDevices) {
                     </span>
                 </td>
                 <td class="text-center">${statusBadge}</td>
-                <td class="hotspot-user" data-mac="${escapeHtml(device.mac_address)}">
-                    <span class="text-muted">-</span>
-                </td>
-                <td class="hotspot-traffic" data-mac="${escapeHtml(device.mac_address)}">
-                    <span class="text-muted">-</span>
-                </td>
             </tr>
         `;
     });
@@ -1256,8 +883,6 @@ function renderConnectedDevices(connectedDevices) {
                         <th width="15%"><i class="bi bi-ethernet"></i> MAC Address</th>
                         <th width="10%" class="text-center"><i class="bi bi-wifi"></i> Connection</th>
                         <th width="10%" class="text-center"><i class="bi bi-check-circle"></i> Status</th>
-                        <th width="13%"><i class="bi bi-person-badge"></i> Hotspot User</th>
-                        <th width="18%"><i class="bi bi-speedometer2"></i> Traffic (RX / TX)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1298,12 +923,6 @@ function renderConnectedDevices(connectedDevices) {
                     </span>
                 </td>
                 <td class="text-center">${statusBadge}</td>
-                <td class="hotspot-user" data-mac="${escapeHtml(device.mac_address)}">
-                    <span class="text-muted">-</span>
-                </td>
-                <td class="hotspot-traffic" data-mac="${escapeHtml(device.mac_address)}">
-                    <span class="text-muted">-</span>
-                </td>
             </tr>
         `;
     });
@@ -2185,300 +1804,9 @@ async function removeTagFromDevice(tagName) {
     }
 }
 
-// Hotspot Traffic Management
-let hotspotTrafficInterval = null;
-let previousBytesData = {}; // Store previous bytes for rate calculation
-let hotspotMonitoringActive = false; // Track if monitoring is active
-let hotspotFetchInProgress = false; // Prevent concurrent requests
-let hotspotAbortController = null; // AbortController to cancel pending requests
-
-async function fetchHotspotTraffic() {
-    // Prevent concurrent requests - check FIRST before any cancellation
-    if (hotspotFetchInProgress) {
-        console.debug('[HOTSPOT] Fetch already in progress, skipping...');
-        return;
-    }
-
-    // Get all MAC addresses from connected devices table
-    const macElements = document.querySelectorAll('.hotspot-user[data-mac]');
-    if (macElements.length === 0) {
-        console.debug('[HOTSPOT] No MAC addresses found in table');
-        return;
-    }
-
-    const macAddresses = Array.from(macElements).map(el => el.dataset.mac);
-    console.log(`[HOTSPOT] Starting fetch for ${macAddresses.length} devices`);
-
-    // Mark as in progress BEFORE creating AbortController
-    hotspotFetchInProgress = true;
-
-    // Create new AbortController for this request only
-    hotspotAbortController = new AbortController();
-
-    // Update status to show fetching (but keep it subtle)
-    const statusEl = document.getElementById('hotspot-status');
-    if (statusEl) {
-        statusEl.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> <small class="text-muted">Updating...</small>';
-    }
-
-    try {
-        const result = await fetchAPI('/api/get-hotspot-traffic.php', {
-            method: 'POST',
-            body: JSON.stringify({ mac_addresses: macAddresses }),
-            timeout: 15000, // 15 second timeout (MikroTik may be slow)
-            signal: hotspotAbortController.signal
-        });
-
-        console.log('[HOTSPOT] Fetch completed successfully', {
-            from_cache: result.from_cache,
-            cache_age: result.cache_age,
-            total_matched: result.total_matched
-        });
-
-        if (result && result.success && result.data) {
-            updateHotspotTrafficDisplay(result.data, result.timestamp);
-
-            // Update status with last update time and cache info
-            if (statusEl) {
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const cacheInfo = result.from_cache ? ` <small class="text-info">[cached ${result.cache_age}s]</small>` : '';
-                statusEl.innerHTML = `<span class="text-success">✓ ${timeStr}</span>${cacheInfo}`;
-            }
-        } else if (result && result.error === 'timeout') {
-            // Request timeout (15s)
-            console.warn('[HOTSPOT] Request timeout after 15s');
-            const errorMsg = 'Request timeout. Retrying in 5s...';
-            updateHotspotTrafficError(errorMsg);
-
-            if (statusEl) {
-                statusEl.innerHTML = '<i class="bi bi-clock text-warning"></i> <small>Timeout - retrying...</small>';
-            }
-        } else {
-            // MikroTik offline or other error
-            console.warn('[HOTSPOT] Error response:', result);
-            const errorMsg = (result && result.message) ? result.message : 'MikroTik Offline';
-            updateHotspotTrafficError(errorMsg);
-
-            if (statusEl) {
-                statusEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning"></i> ' + escapeHtml(errorMsg);
-            }
-        }
-    } catch (error) {
-        // Check if it was aborted
-        if (error.name === 'AbortError') {
-            console.warn('[HOTSPOT] Request was aborted (likely due to page refresh)');
-        } else {
-            console.error('[HOTSPOT] Fetch failed:', error.message);
-        }
-
-        // Don't show error to user on every fetch, just keep last known data
-        // Only update status, not the actual traffic data
-        if (statusEl) {
-            statusEl.innerHTML = '<i class="bi bi-x-circle text-danger"></i> <small>Connection error - showing last known data</small>';
-        }
-    } finally {
-        // Always reset the flag when done (CRITICAL for preventing stuck state)
-        console.debug('[HOTSPOT] Resetting fetch flag');
-        hotspotFetchInProgress = false;
-        hotspotAbortController = null;
-    }
-}
-
-function updateHotspotTrafficDisplay(data, timestamp) {
-    Object.keys(data).forEach(mac => {
-        const userInfo = data[mac];
-        const userCell = document.querySelector(`.hotspot-user[data-mac="${mac}"]`);
-        const trafficCell = document.querySelector(`.hotspot-traffic[data-mac="${mac}"]`);
-
-        if (!userCell || !trafficCell) return;
-
-        // Update username
-        if (userInfo.found) {
-            userCell.innerHTML = `<strong>${escapeHtml(userInfo.username)}</strong>`;
-
-            // Calculate RX/TX rate from bytes difference
-            const currentBytesIn = userInfo.bytes_in || 0;
-            const currentBytesOut = userInfo.bytes_out || 0;
-
-            let rxRate = 0;
-            let txRate = 0;
-
-            if (previousBytesData[mac]) {
-                const timeDiff = timestamp - previousBytesData[mac].timestamp;
-                if (timeDiff > 0) {
-                    const bytesDiffIn = Math.max(0, currentBytesIn - previousBytesData[mac].bytes_in);
-                    const bytesDiffOut = Math.max(0, currentBytesOut - previousBytesData[mac].bytes_out);
-
-                    // Calculate rate in bytes per second, then convert to bits per second
-                    const rawRxRate = (bytesDiffIn / timeDiff) * 8; // bits per second
-                    const rawTxRate = (bytesDiffOut / timeDiff) * 8; // bits per second
-
-                    // Apply simple smoothing: 30% new value, 70% old value (reduces jitter)
-                    const smoothingFactor = 0.3;
-                    if (previousBytesData[mac].rxRate !== undefined) {
-                        rxRate = (smoothingFactor * rawRxRate) + ((1 - smoothingFactor) * previousBytesData[mac].rxRate);
-                        txRate = (smoothingFactor * rawTxRate) + ((1 - smoothingFactor) * previousBytesData[mac].txRate);
-                    } else {
-                        rxRate = rawRxRate;
-                        txRate = rawTxRate;
-                    }
-                } else {
-                    // Time diff is 0, use previous rate if available
-                    rxRate = previousBytesData[mac].rxRate || 0;
-                    txRate = previousBytesData[mac].txRate || 0;
-                }
-            }
-
-            // Store current bytes and calculated rate for next iteration
-            previousBytesData[mac] = {
-                bytes_in: currentBytesIn,
-                bytes_out: currentBytesOut,
-                timestamp: timestamp,
-                rxRate: rxRate,
-                txRate: txRate
-            };
-
-            // Format and display traffic
-            const rxFormatted = formatBitrate(rxRate);
-            const txFormatted = formatBitrate(txRate);
-
-            // Debug log for first device only (to avoid console spam)
-            if (mac === Object.keys(data)[0]) {
-                console.debug('[HOTSPOT] Traffic update:', {
-                    mac: mac,
-                    username: userInfo.username,
-                    rx: rxFormatted,
-                    tx: txFormatted,
-                    bytes_in: currentBytesIn,
-                    bytes_out: currentBytesOut
-                });
-            }
-
-            trafficCell.innerHTML = `<span class="text-success">↓ ${rxFormatted}</span> / <span class="text-danger">↑ ${txFormatted}</span>`;
-        } else {
-            userCell.innerHTML = '<span class="text-muted">N/A</span>';
-            trafficCell.innerHTML = '<span class="text-muted">N/A</span>';
-        }
-
-        // Also save to savedHotspotData for persistence across refreshes
-        if (!savedHotspotData[mac]) savedHotspotData[mac] = {};
-        savedHotspotData[mac].userHtml = userCell.innerHTML;
-        savedHotspotData[mac].trafficHtml = trafficCell.innerHTML;
-    });
-}
-
-function updateHotspotTrafficError(message) {
-    // Only show error in status indicator, keep existing data in cells (don't overwrite)
-    const statusEl = document.getElementById('hotspot-status');
-    if (statusEl) {
-        statusEl.innerHTML = `<span class="text-danger">⚠ ${escapeHtml(message)}</span>`;
-    }
-
-    // DON'T clear existing data - let users see last known good data
-    // This prevents the annoying "all N/A" experience when timeout occurs
-    console.warn('[HOTSPOT] Error:', message, '- Keeping last known data visible');
-}
-
-function formatBitrate(bps) {
-    if (bps === 0 || isNaN(bps)) return '0 bps';
-
-    const units = ['bps', 'Kbps', 'Mbps', 'Gbps'];
-    let value = Math.abs(bps);
-    let unitIndex = 0;
-
-    while (value >= 1024 && unitIndex < units.length - 1) {
-        value /= 1024;
-        unitIndex++;
-    }
-
-    return value.toFixed(2) + ' ' + units[unitIndex];
-}
-
-function startHotspotTrafficMonitoring() {
-    // Check if table exists (tab must be active)
-    const table = document.getElementById('connected-devices-table');
-    if (!table) {
-        console.debug('[HOTSPOT] Table not found, skipping monitoring start');
-        return;
-    }
-
-    // Update status
-    const statusEl = document.getElementById('hotspot-status');
-    if (statusEl) statusEl.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Starting...';
-
-    // Clear existing interval if any
-    if (hotspotTrafficInterval) {
-        clearInterval(hotspotTrafficInterval);
-    }
-
-    // Set monitoring as active
-    hotspotMonitoringActive = true;
-
-    console.log('[HOTSPOT] Monitoring started (auto-mode)');
-
-    // Fetch immediately
-    fetchHotspotTraffic();
-
-    // Then fetch every 5 seconds - balanced between smooth updates and stability
-    // 5s interval with 15s timeout allows enough time for slow MikroTik response
-    hotspotTrafficInterval = setInterval(fetchHotspotTraffic, 5000);
-}
-
-function stopHotspotTrafficMonitoring() {
-    console.log('[HOTSPOT] Stopping monitoring...');
-
-    // Clear status
-    const statusEl = document.getElementById('hotspot-status');
-    if (statusEl) statusEl.innerHTML = '<i class="bi bi-router text-muted"></i> <span class="text-muted">Monitoring stopped</span>';
-
-    // Clear interval first
-    if (hotspotTrafficInterval) {
-        clearInterval(hotspotTrafficInterval);
-        hotspotTrafficInterval = null;
-    }
-
-    // Abort any pending request
-    if (hotspotAbortController) {
-        console.log('[HOTSPOT] Aborting pending request...');
-        hotspotAbortController.abort();
-        hotspotAbortController = null;
-    }
-
-    // Reset flags
-    hotspotFetchInProgress = false;
-    previousBytesData = {};
-
-    // Set monitoring as inactive
-    hotspotMonitoringActive = false;
-
-    console.log('[HOTSPOT] Monitoring stopped successfully');
-}
-
 document.addEventListener('DOMContentLoaded', function() {
     loadDeviceDetail(); // Initial load (manual, scroll to top)
     // Auto-refresh dimatikan: data hanya dimuat saat halaman dibuka / setelah aksi
-
-    // Auto-start/stop hotspot monitoring based on Connected Devices tab visibility
-    const allTabs = document.querySelectorAll('[data-bs-toggle="tab"]');
-    allTabs.forEach(tab => {
-        tab.addEventListener('shown.bs.tab', function(event) {
-            if (tab.id === 'devices-tab') {
-                // Start monitoring when Connected Devices tab is opened
-                console.log('[TAB] Connected Devices tab opened - starting hotspot monitoring...');
-                // Small delay to ensure table is rendered
-                setTimeout(() => {
-                    startHotspotTrafficMonitoring();
-                }, 200);
-            } else {
-                // Stop monitoring when switching to other tabs
-                if (hotspotTrafficInterval) {
-                    console.log('[TAB] Switched away from Connected Devices - stopping hotspot monitoring...');
-                    stopHotspotTrafficMonitoring();
-                }
-            }
-        });
-    });
 });
 
 // ============================================================

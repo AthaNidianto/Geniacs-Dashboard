@@ -89,10 +89,7 @@ async function fetchAPI(url, options = {}) {
         console.error('Fetch error for', url, ':', error);
 
         // Only show toast for non-abort errors
-        if (!url.includes('/api/get-hotspot-traffic.php')) {
-            // Don't show toast for hotspot API errors (handled separately)
-            showToast('Terjadi kesalahan koneksi: ' + error.message, 'danger');
-        }
+        showToast('Terjadi kesalahan koneksi: ' + error.message, 'danger');
         return { success: false, error: error.name, message: error.message };
     }
 }
