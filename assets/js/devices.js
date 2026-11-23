@@ -61,24 +61,51 @@ function findReplacementCandidates(list) {
     return out;
 }
 
+let replBannerOpen = null;   // null = otomatis: terbuka kalau kandidatnya sedikit (<= 3)
+
 function renderReplacementBanner() {
     const box = document.getElementById('replacement-banner');
     if (!box) return;
     const c = findReplacementCandidates(allDevices);
     if (!c.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
-    box.innerHTML = '<div class="alert alert-info mb-3">' +
-        '<div class="fw-semibold mb-2"><i class="bi bi-arrow-left-right"></i> Kemungkinan ONU pengganti (' + c.length + ')</div>' +
-        c.map(x =>
-            '<div class="d-flex flex-wrap align-items-center gap-2 mb-1 repl-item">' +
-                '<span><code>' + escapeHtml(x.newDev.serial_number) + '</code> online, PPPoE <b>' + escapeHtml(x.user) +
-                '</b> sama dengan <code>' + escapeHtml(x.oldDev.serial_number) + '</code> yang offline</span>' +
-                '<button type="button" class="btn btn-sm btn-primary ms-auto" data-old="' + escapeHtml(x.oldDev.device_id) +
-                '" data-new="' + escapeHtml(x.newDev.device_id) + '" data-old-sn="' + escapeHtml(x.oldDev.serial_number) +
-                '" data-new-sn="' + escapeHtml(x.newDev.serial_number) + '" onclick="mergeDevicePair(this)">Gabungkan</button>' +
-            '</div>'
-        ).join('') +
+
+    const open = replBannerOpen === null ? c.length <= 3 : replBannerOpen;
+    const items = c.map(x =>
+        '<div class="d-flex flex-wrap align-items-center gap-2 py-1 repl-item">' +
+            '<span style="min-width:0;overflow-wrap:anywhere;"><code>' + escapeHtml(x.newDev.serial_number) + '</code> online, PPPoE <b>' + escapeHtml(x.user) +
+            '</b> sama dengan <code>' + escapeHtml(x.oldDev.serial_number) + '</code> yang offline</span>' +
+            '<button type="button" class="btn btn-sm btn-primary ms-auto" data-old="' + escapeHtml(x.oldDev.device_id) +
+            '" data-new="' + escapeHtml(x.newDev.device_id) + '" data-old-sn="' + escapeHtml(x.oldDev.serial_number) +
+            '" data-new-sn="' + escapeHtml(x.newDev.serial_number) + '" onclick="mergeDevicePair(this)">Gabungkan</button>' +
+        '</div>'
+    ).join('');
+
+    box.innerHTML = '<div class="alert alert-info mb-3 py-2">' +
+        '<div class="d-flex flex-wrap align-items-center gap-2">' +
+            '<div class="fw-semibold"><i class="bi bi-arrow-left-right"></i> Kemungkinan ONU pengganti (' + c.length + ')</div>' +
+            '<span id="repl-progress" class="small text-muted"></span>' +
+            '<div class="ms-auto d-flex gap-2">' +
+                '<button type="button" id="repl-toggle-btn" class="btn btn-sm btn-outline-primary" onclick="toggleReplacementBanner()">' + (open ? 'Sembunyikan' : 'Tampilkan') + '</button>' +
+                '<button type="button" id="repl-all-btn" class="btn btn-sm btn-primary" onclick="mergeAllPairs()">Gabungkan semua (' + c.length + ')</button>' +
+            '</div>' +
+        '</div>' +
+        (open ? '<div class="mt-2" id="repl-list" style="max-height:320px;overflow-y:auto;">' + items + '</div>' : '') +
         '</div>';
     box.style.display = '';
+}
+
+function toggleReplacementBanner() {
+    const c = findReplacementCandidates(allDevices);
+    const open = replBannerOpen === null ? c.length <= 3 : replBannerOpen;
+    replBannerOpen = !open;
+    renderReplacementBanner();
+}
+
+async function postMerge(oldId, newId) {
+    return fetchAPI('/api/merge-device.php', {
+        method: 'POST',
+        body: JSON.stringify({ old_id: oldId, new_id: newId })
+    });
 }
 
 async function mergeDevicePair(btn) {
@@ -86,10 +113,7 @@ async function mergeDevicePair(btn) {
     const oldSn = btn.dataset.oldSn, newSn = btn.dataset.newSn;
     if (!confirm('Gabungkan?\n\nDevice lama ' + oldSn + ' akan DIHAPUS dari GenieACS dan dashboard (tidak bisa dibatalkan).\nTag-nya dipindah ke ' + newSn + '.')) return;
     btn.disabled = true;
-    const result = await fetchAPI('/api/merge-device.php', {
-        method: 'POST',
-        body: JSON.stringify({ old_id: oldId, new_id: newId })
-    });
+    const result = await postMerge(oldId, newId);
     if (result && result.success) {
         showToast(result.message || 'Berhasil digabungkan', 'success');
         loadDevices();
@@ -97,6 +121,39 @@ async function mergeDevicePair(btn) {
         btn.disabled = false;
         showToast((result && result.message) || 'Gagal menggabungkan', 'danger');
     }
+}
+
+// Gabungkan semua pasangan yang ditandai, satu per satu. Server mengecek ulang syarat tiap pasangan;
+// yang tidak memenuhi syarat dilewati (tidak dihapus).
+async function mergeAllPairs() {
+    const c = findReplacementCandidates(allDevices);
+    if (!c.length) return;
+    if (!confirm('Gabungkan ' + c.length + ' pasangan sekaligus?\n\nSetiap device lama (offline) akan DIHAPUS dari GenieACS dan dashboard, tidak bisa dibatalkan. Tag-nya dipindah ke device baru.\nPasangan yang tidak lolos pengecekan server akan dilewati.')) return;
+
+    const progress = document.getElementById('repl-progress');
+    document.querySelectorAll('#replacement-banner button').forEach(b => b.disabled = true);
+    bulkBusy = true;   // pause auto-refresh selama proses
+    let ok = 0, fail = 0;
+    const reasons = {};
+    try {
+        for (let i = 0; i < c.length; i++) {
+            if (progress) progress.textContent = 'Memproses ' + (i + 1) + ' / ' + c.length + '...';
+            const result = await postMerge(c[i].oldDev.device_id, c[i].newDev.device_id);
+            if (result && result.success) {
+                ok++;
+            } else {
+                fail++;
+                const why = (result && result.message) || 'Tidak ada respons';
+                reasons[why] = (reasons[why] || 0) + 1;
+            }
+        }
+    } finally {
+        bulkBusy = false;
+    }
+    let msg = ok + ' pasangan digabung';
+    if (fail) msg += ', ' + fail + ' dilewati/gagal (' + Object.keys(reasons).map(k => reasons[k] + 'x ' + k).join('; ') + ')';
+    showToast(msg, fail ? 'warning' : 'success', 8000);
+    loadDevices();
 }
 
 // Tab yang isinya device GenieACS (bukan item peta)
