@@ -38,6 +38,7 @@ class AuditLog
         'summon-multiple'        => 'Summon banyak device',
         'summon-all'             => 'Summon semua device',
         'update-wifi-config'     => 'Ubah WiFi',
+        'toggle-wifi'            => 'Aktif/nonaktifkan WiFi',
         'update-lan-port'        => 'Ubah LAN port',
         'update-wan-config'      => 'Ubah WAN',
         'add-wan-config'         => 'Tambah WAN',

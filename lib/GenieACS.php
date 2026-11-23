@@ -907,6 +907,10 @@ class GenieACS
             return $n['enabled'];
         }));
         $data['wifi_networks'] = !empty($activeNetworks) ? $activeNetworks : $wifiNetworks;
+        // WLAN nonaktif tetap dikirim terpisah supaya bisa diaktifkan lagi dari Device Detail
+        $data['wifi_networks_inactive'] = !empty($activeNetworks)
+            ? array_values(array_filter($wifiNetworks, function ($n) { return !$n['enabled']; }))
+            : [];
 
         // Kompatibilitas: wifi_ssid / wifi_password = jaringan pertama yang aktif
         if (!empty($data['wifi_networks'])) {

@@ -1121,6 +1121,7 @@ async function confirmSummon() {
 
 // ---- WiFi: daftar jaringan aktif (2.4GHz / 5GHz) dari ONU ----
 let currentWifiNetworks = [];
+let currentWifiInactive = [];
 let currentWifiDeviceId = '';
 
 function escHtmlWifi(s) {
@@ -1133,6 +1134,7 @@ function escHtmlWifi(s) {
 function renderWifiRows(device) {
     const nets = Array.isArray(device.wifi_networks) ? device.wifi_networks : [];
     currentWifiNetworks = nets;
+    currentWifiInactive = Array.isArray(device.wifi_networks_inactive) ? device.wifi_networks_inactive : [];
     currentWifiDeviceId = device.device_id;
 
     // Fallback: ONU yang datanya tidak punya daftar jaringan
@@ -1154,16 +1156,21 @@ function renderWifiRows(device) {
             </tr>`;
     }
 
-    return nets.map(n => {
+    const activeRows = nets.map(n => {
         const label = `${escHtmlWifi(n.band)} · WLAN ${n.index}`;
         const hasPass = n.password && n.password !== '';
+        const isOn = n.enabled !== false;
         return `
             <tr>
                 <th>WiFi SSID<br><small class="text-muted fw-normal">${label}</small></th>
                 <td>
                     ${escHtmlWifi(n.ssid)}
+                    ${isOn ? '' : '<span class="badge bg-secondary ms-1">Nonaktif</span>'}
                     <button class="btn btn-sm btn-warning ms-2" onclick="openEditWiFiModal(${n.index})">
                         <i class="bi bi-pencil"></i> Edit WiFi
+                    </button>
+                    <button class="btn btn-sm ${isOn ? 'btn-outline-danger' : 'btn-outline-success'} ms-1" onclick="toggleWifiEnable(${n.index}, ${isOn ? 'false' : 'true'})">
+                        <i class="bi bi-${isOn ? 'wifi-off' : 'wifi'}"></i> ${isOn ? 'Nonaktifkan' : 'Aktifkan'}
                     </button>
                 </td>
             </tr>
@@ -1179,6 +1186,49 @@ function renderWifiRows(device) {
                 </td>
             </tr>`;
     }).join('');
+
+    // WLAN yang sedang nonaktif: satu baris ringkas tiap jaringan, bisa diaktifkan lagi
+    const inactiveRows = currentWifiInactive.map(n => `
+            <tr class="table-light">
+                <th>WiFi nonaktif<br><small class="text-muted fw-normal">${escHtmlWifi(n.band)} · WLAN ${n.index}</small></th>
+                <td>
+                    <span class="text-muted">${escHtmlWifi(n.ssid)}</span>
+                    <span class="badge bg-secondary ms-1">Nonaktif</span>
+                    <button class="btn btn-sm btn-outline-success ms-2" onclick="toggleWifiEnable(${n.index}, true)">
+                        <i class="bi bi-wifi"></i> Aktifkan
+                    </button>
+                </td>
+            </tr>`).join('');
+
+    return activeRows + inactiveRows;
+}
+
+// Aktifkan / nonaktifkan satu jaringan WiFi (mis. matikan 5GHz saja)
+async function toggleWifiEnable(index, enable) {
+    const net = currentWifiNetworks.concat(currentWifiInactive).find(n => n.index === index);
+    const name = net ? `${net.band} · ${net.ssid} (WLAN ${index})` : `WLAN ${index}`;
+    const msg = enable
+        ? `Aktifkan WiFi ${name}?`
+        : `Nonaktifkan WiFi ${name}?\n\nPerangkat pelanggan yang tersambung ke jaringan ini akan terputus.`;
+    if (!confirm(msg)) return;
+
+    showLoading(enable ? 'Mengaktifkan WiFi...' : 'Menonaktifkan WiFi...');
+    try {
+        const result = await fetchAPI('/api/toggle-wifi.php', {
+            method: 'POST',
+            body: JSON.stringify({ device_id: currentWifiDeviceId, wlan_index: index, enable: !!enable })
+        });
+        hideLoading();
+        if (result && result.success) {
+            showToast(result.message || 'Perintah dikirim ke ONU', 'success');
+            setTimeout(() => { loadDeviceDetail(); }, 4000);
+        } else {
+            showToast((result && result.message) || 'Gagal mengubah status WiFi', 'danger');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('Error: ' + error.message, 'danger');
+    }
 }
 
 function toggleWifiPassword(index) {
