@@ -107,6 +107,8 @@ include __DIR__ . '/views/layouts/header.php';
                 </div>
             </div>
             <div class="card-body">
+                <!-- Kemungkinan ONU pengganti (PPPoE sama, SN beda); diisi devices.js -->
+                <div id="replacement-banner" style="display:none;"></div>
                 <!-- Tab Navigation -->
                 <ul class="nav nav-tabs mb-3" id="deviceTypeTabs" role="tablist">
                     <li class="nav-item" role="presentation">

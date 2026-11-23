@@ -34,6 +34,71 @@ function isMikrotik(device) {
     return /^(RB\d|RBM|CCR\d|CRS\d|hAP|hEX|cAP|wAP|mAP|SXT|LHG|NetMetal|PowerBox)/i.test((device.product_class || '').trim());
 }
 
+// ---------------------------------------------------------------------------
+// Kemungkinan ONU pengganti: PPPoE sama, SN beda (ONU diganti unit lain).
+// Hanya ditandai; yang lama baru dihapus kalau tombol Gabungkan ditekan.
+// Aman dari salah cocok: dilewati kalau ambigu (lebih dari satu yang online / offline
+// dengan PPPoE itu). Server mengecek ulang semua syarat sebelum menghapus.
+// ---------------------------------------------------------------------------
+function findReplacementCandidates(list) {
+    const norm = u => { u = String(u || '').trim().toLowerCase(); return (u === '' || u === 'n/a') ? '' : u; };
+    const groups = {};
+    (list || []).forEach(d => {
+        if (isMikrotik(d)) return;
+        const u = norm(d.pppoe_username);
+        if (!u) return;
+        (groups[u] = groups[u] || []).push(d);
+    });
+    const out = [];
+    Object.keys(groups).forEach(u => {
+        const online = groups[u].filter(d => d.status === 'online');
+        const offline = groups[u].filter(d => d.status !== 'online');
+        if (online.length !== 1 || offline.length !== 1) return;   // ambigu: lewati
+        const n = online[0], o = offline[0];
+        if (String(n.serial_number).toLowerCase() === String(o.serial_number).toLowerCase()) return;   // SN sama = urusan cron
+        out.push({ user: u, newDev: n, oldDev: o });
+    });
+    return out;
+}
+
+function renderReplacementBanner() {
+    const box = document.getElementById('replacement-banner');
+    if (!box) return;
+    const c = findReplacementCandidates(allDevices);
+    if (!c.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="alert alert-info mb-3">' +
+        '<div class="fw-semibold mb-2"><i class="bi bi-arrow-left-right"></i> Kemungkinan ONU pengganti (' + c.length + ')</div>' +
+        c.map(x =>
+            '<div class="d-flex flex-wrap align-items-center gap-2 mb-1 repl-item">' +
+                '<span><code>' + escapeHtml(x.newDev.serial_number) + '</code> online, PPPoE <b>' + escapeHtml(x.user) +
+                '</b> sama dengan <code>' + escapeHtml(x.oldDev.serial_number) + '</code> yang offline</span>' +
+                '<button type="button" class="btn btn-sm btn-primary ms-auto" data-old="' + escapeHtml(x.oldDev.device_id) +
+                '" data-new="' + escapeHtml(x.newDev.device_id) + '" data-old-sn="' + escapeHtml(x.oldDev.serial_number) +
+                '" data-new-sn="' + escapeHtml(x.newDev.serial_number) + '" onclick="mergeDevicePair(this)">Gabungkan</button>' +
+            '</div>'
+        ).join('') +
+        '</div>';
+    box.style.display = '';
+}
+
+async function mergeDevicePair(btn) {
+    const oldId = btn.dataset.old, newId = btn.dataset.new;
+    const oldSn = btn.dataset.oldSn, newSn = btn.dataset.newSn;
+    if (!confirm('Gabungkan?\n\nDevice lama ' + oldSn + ' akan DIHAPUS dari GenieACS dan dashboard (tidak bisa dibatalkan).\nTag-nya dipindah ke ' + newSn + '.')) return;
+    btn.disabled = true;
+    const result = await fetchAPI('/api/merge-device.php', {
+        method: 'POST',
+        body: JSON.stringify({ old_id: oldId, new_id: newId })
+    });
+    if (result && result.success) {
+        showToast(result.message || 'Berhasil digabungkan', 'success');
+        loadDevices();
+    } else {
+        btn.disabled = false;
+        showToast((result && result.message) || 'Gagal menggabungkan', 'danger');
+    }
+}
+
 // Tab yang isinya device GenieACS (bukan item peta)
 function isDeviceTab(type) {
     return type === 'onu' || type === 'mikrotik';
@@ -269,6 +334,7 @@ async function loadDevices(isAutoRefresh = false) {
         // ...baru render dengan filter RB/status/search/sort, supaya badge terakhir
         // ditulis oleh hasil filter
         applyRbFilter(true);
+        renderReplacementBanner();
 
         // Restore scroll position and sort icons after auto-refresh
         if (isAutoRefresh) {

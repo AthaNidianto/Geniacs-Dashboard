@@ -44,6 +44,7 @@ class AuditLog
         'delete-wan-config'      => 'Hapus WAN',
         'update-dhcp-config'     => 'Ubah DHCP',
         'bulk-delete-devices'    => 'Hapus device (massal)',
+        'merge-device'           => 'Gabungkan device (PPPoE sama)',
         'bulk-tag'               => 'Ubah tag (massal)',
         'update-password'        => 'Ubah akun dashboard',
         'save-genieacs'          => 'Simpan konfigurasi GenieACS',
